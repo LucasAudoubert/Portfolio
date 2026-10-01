@@ -1,0 +1,9 @@
+node_modules
+dist
+
+# Raw, multi-megabyte source assets. `npm run models` turns them into the
+# compact GLBs in public/models, which ARE committed (they ship with the site).
+assets/models-src
+
+# Dev-only screenshots from `npm run shot`
+tools/shots

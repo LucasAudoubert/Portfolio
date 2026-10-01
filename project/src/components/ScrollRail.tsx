@@ -1,6 +1,6 @@
 import { animate, onScroll, type ScrollObserver } from 'animejs'
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { SECTIONS } from '../data/sections'
+import { CHAPTERS } from '../data/chapters'
 
 interface ScrollRailProps {
   scrollTargetRef: RefObject<HTMLElement | null>
@@ -13,7 +13,7 @@ interface ScrollRailProps {
  */
 export function ScrollRail({ scrollTargetRef }: ScrollRailProps) {
   const lineRef = useRef<HTMLSpanElement>(null)
-  const [active, setActive] = useState(SECTIONS[0].id)
+  const [active, setActive] = useState(CHAPTERS[0].id)
 
   // Progress line: scaleY 0 -> 1 across the whole document, hard-synced.
   useEffect(() => {
@@ -33,7 +33,7 @@ export function ScrollRail({ scrollTargetRef }: ScrollRailProps) {
 
   // Active-section tracking.
   useEffect(() => {
-    const observers: ScrollObserver[] = SECTIONS.map((s) =>
+    const observers: ScrollObserver[] = CHAPTERS.map((s) =>
       onScroll({
         target: `#${s.id}`,
         enter: 'center top', // viewport centre passes the section's top
@@ -61,7 +61,7 @@ export function ScrollRail({ scrollTargetRef }: ScrollRailProps) {
       </span>
 
       <ul className="flex flex-col gap-3">
-        {SECTIONS.map((s, i) => {
+        {CHAPTERS.map((s, i) => {
           const isActive = s.id === active
           return (
             <li key={s.id}>

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Model inspector</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0b0c0e;
+        font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #e7e9ee;
+      }
+      canvas {
+        display: block;
+      }
+      #legend {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        padding: 10px 12px;
+        background: rgba(10, 11, 13, 0.82);
+        border: 1px solid #2a2d33;
+        max-height: calc(100vh - 24px);
+        overflow: auto;
+        white-space: pre;
+      }
+      #legend b {
+        display: block;
+        margin-bottom: 6px;
+        color: #fff;
+      }
+      #legend .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      #legend .swatch {
+        width: 9px;
+        height: 9px;
+        flex: 0 0 auto;
+      }
+      #legend .label {
+        flex: 1 1 auto;
+      }
+      #legend .dark {
+        color: #9aa1ac;
+      }
+      #hud {
+        position: fixed;
+        bottom: 10px;
+        left: 12px;
+        color: #9aa1ac;
+        white-space: pre;
+      }
+      #err {
+        position: fixed;
+        inset: auto 12px 12px 12px;
+        color: #ff8080;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="legend"></div>
+    <div id="hud"></div>
+    <div id="err"></div>
+    <script type="module" src="/tools/inspector/main.ts"></script>
+  </body>
+</html>
