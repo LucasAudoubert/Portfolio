@@ -11,10 +11,14 @@ export interface Role {
 /**
  * One full-viewport scroll stop.
  *
- * `pose` is the rig state the hologram should hold while that section sits in
- * the middle of the viewport; Anime.js tweens between consecutive poses as the
- * reader scrolls. `model` is the airframe the camera is inspecting, which is
- * also the model whose annotations are shown.
+ * `pose` is the rig state the hologram holds while that section sits in the
+ * middle of the viewport; Anime.js tweens between consecutive poses as the
+ * reader scrolls. `model` is the airframe on screen - one aircraft per
+ * chapter, always.
+ *
+ * `milestones` add poses *inside* the chapter's own scroll range (at = 0.5 is
+ * halfway to the next chapter). That is how an airframe is shown whole on
+ * arrival and comes apart as the reader keeps scrolling.
  */
 export interface Chapter {
   id: string
@@ -27,9 +31,10 @@ export interface Chapter {
   /** Positions rendered as a compact table. */
   roles?: Role[]
   align: 'left' | 'right' | 'center'
-  /** Airframe in focus for this stop (drives annotations). */
+  /** Airframe on screen for this stop (drives annotations). */
   model: ModelId
   pose: Partial<HologramRig>
+  milestones?: Array<{ at: number; pose: Partial<HologramRig> }>
 }
 
 export const CHAPTERS: Chapter[] = [
@@ -49,7 +54,6 @@ export const CHAPTERS: Chapter[] = [
       rafale: 1,
       apache: 0,
       mq9: 0,
-      spread: 0,
       yaw: -0.15,
       pitch: 0.03,
       roll: -0.07,
@@ -60,11 +64,18 @@ export const CHAPTERS: Chapter[] = [
       camTargetY: -1.9,
       camTargetZ: 0,
       camShiftX: 0,
+      explode: 0,
+      canopy: 0,
+      gear: 0,
+      rotor: 0,
+      propeller: 0,
+      sensor: 0,
       scan: 0.2,
       labels: 0,
       overlay: 1,
       glow: 1,
     },
+    milestones: [{ at: 0.6, pose: { camAzimuth: 2.95, camDistance: 20.5 } }],
   },
   {
     id: 'fullstack',
@@ -86,7 +97,6 @@ export const CHAPTERS: Chapter[] = [
       rafale: 1,
       apache: 0,
       mq9: 0,
-      spread: 0,
       yaw: 0.05,
       pitch: 0.02,
       roll: 0,
@@ -99,18 +109,28 @@ export const CHAPTERS: Chapter[] = [
       camShiftX: -1.9,
       canopy: 1,
       gear: 0.35,
-      explode: 0.24,
+      explode: 0,
+      rotor: 0,
+      propeller: 0,
+      sensor: 0,
       scan: 0.55,
       labels: 1,
       overlay: 1,
       glow: 1.05,
     },
+    // Continuer a scroller ouvre la cellule : verriere, train, puis sous-ensembles.
+    milestones: [
+      {
+        at: 0.55,
+        pose: { explode: 0.55, camDistance: 20, camTargetY: -0.5, camTargetZ: -0.6, scan: 0.35 },
+      },
+    ],
   },
   {
     id: 'security',
     eyebrow: '02 / Cybersécurité',
     title: 'Observer avant de défendre.',
-    body: 'Sécurité applicative : authentification et gestion des accès, durcissement, revue de code, secrets. À la rentrée, le Master IA & Cybersécurité prend le relais. Le capteur tourne pendant que le balayage traverse la cellule.',
+    body: 'Sécurité applicative : authentification et gestion des accès, durcissement, revue de code, secrets. À la rentrée, le Master IA & Cybersécurité prend le relais. La tourelle balaie pendant que le scan traverse la cellule — puis les 39 sous-ensembles se séparent.',
     stack: [
       'Auth · JWT · gestion des accès',
       'Sécurité applicative · durcissement · secrets',
@@ -123,7 +143,6 @@ export const CHAPTERS: Chapter[] = [
       rafale: 0,
       apache: 0,
       mq9: 1,
-      spread: 0,
       yaw: -0.2,
       pitch: 0.01,
       roll: 0.04,
@@ -136,18 +155,27 @@ export const CHAPTERS: Chapter[] = [
       camShiftX: 1.35,
       sensor: 1,
       propeller: 1,
-      scan: 1,
-      explode: 0.15,
+      rotor: 0,
+      explode: 0,
+      canopy: 0,
+      gear: 0,
+      scan: 0.6,
       labels: 1,
       overlay: 1,
       glow: 1,
     },
+    milestones: [
+      {
+        at: 0.55,
+        pose: { explode: 1, camDistance: 27, camTargetY: -0.5, camTargetZ: 0.4, camAzimuth: 5.95, scan: 0.25 },
+      },
+    ],
   },
   {
     id: 'ai',
     eyebrow: '03 / Intelligence artificielle',
     title: 'Faire tourner le système.',
-    body: 'Intégration d’IA en production : OCR, LLM, RAG, agents et MCP. Un modèle ne vaut que s’il tourne, se mesure et se surveille. Le rotor s’emballe, les pales sortent de la cellule et chaque sous-ensemble devient addressable.',
+    body: 'Intégration d’IA en production : OCR, LLM, RAG, agents et MCP. Un modèle ne vaut que s’il tourne, se mesure et se surveille. Le rotor s’emballe — puis les pales, l’armement et la dérive sortent de la cellule.',
     stack: ['OCR · LLM · RAG · MCP · LoRa', 'Vision · détection · segmentation', 'Inférence · coûts · observabilité'],
     roles: [{ title: 'Major de promotion — 3ᵉ année', org: 'IIM', period: '2024 — 2026' }],
     align: 'right',
@@ -156,7 +184,6 @@ export const CHAPTERS: Chapter[] = [
       rafale: 0,
       apache: 1,
       mq9: 0,
-      spread: 0,
       yaw: 0.18,
       pitch: 0.04,
       roll: 0.06,
@@ -168,18 +195,28 @@ export const CHAPTERS: Chapter[] = [
       camTargetZ: 0.2,
       camShiftX: -1.3,
       rotor: 1,
-      explode: 0.4,
-      scan: 0.4,
+      propeller: 0,
+      sensor: 0,
+      explode: 0,
+      canopy: 0,
+      gear: 0,
+      scan: 0.45,
       labels: 1,
       overlay: 1,
       glow: 1.05,
     },
+    milestones: [
+      {
+        at: 0.55,
+        pose: { explode: 1, camDistance: 24.5, camTargetY: -0.45, camTargetZ: 0.4, camAzimuth: 4.85, scan: 0.3 },
+      },
+    ],
   },
   {
     id: 'architecture',
     eyebrow: '04 / Pilotage',
     title: 'Tout, à plat.',
-    body: 'Chef de projet digital : équipes pluridisciplinaires — dev, design, marketing —, planning Gantt, backlog ClickUp, suivi GitHub Projects et engagement de délais. La vue éclatée raconte la même discipline : chaque sous-ensemble est un module indépendant.',
+    body: 'Chef de projet digital : équipes pluridisciplinaires — dev, design, marketing —, planning Gantt, backlog ClickUp, suivi GitHub Projects et engagement de délais. Même discipline sur un appareil : chaque sous-ensemble est un module indépendant, adressable et testable.',
     stack: [
       'Pilotage transverse · interface client',
       'Gantt · ClickUp · GitHub Issues / Projects',
@@ -189,31 +226,38 @@ export const CHAPTERS: Chapter[] = [
       { title: 'Chef de projet digital', org: 'IIM — Bourse au projet / Culture du mouvement', period: '2025 — 2026' },
       { title: 'Électrotechnicien', org: 'Faymonville — Luxembourg', period: '2022 — 2023' },
     ],
-    align: 'center',
-    model: 'mq9',
+    align: 'left',
+    model: 'rafale',
     pose: {
       rafale: 1,
-      apache: 1,
-      mq9: 1,
-      spread: 1,
+      apache: 0,
+      mq9: 0,
       yaw: 0,
-      pitch: 0,
+      pitch: 0.02,
       roll: 0,
       posY: 0,
-      camAzimuth: 0.5,
-      camElevation: 0.3,
+      camAzimuth: 2,
+      camElevation: 0.42,
       camDistance: 30,
-      camTargetY: -2.3,
+      camTargetY: -0.8,
       camTargetZ: 0,
-      camShiftX: 0,
-      rotor: 0.25,
-      propeller: 0.25,
+      camShiftX: 1.6,
       explode: 1,
-      scan: 0.2,
-      labels: 0,
-      overlay: 0.75,
+      canopy: 0.25,
+      gear: 0.8,
+      rotor: 0,
+      propeller: 0,
+      sensor: 0,
+      scan: 0.3,
+      labels: 1,
+      overlay: 0.9,
       glow: 1,
     },
+    // Un tour complet autour des modules, sans que rien ne bouge d'autre.
+    milestones: [
+      { at: 0.34, pose: { camAzimuth: 3.2 } },
+      { at: 0.68, pose: { camAzimuth: 4.4, camDistance: 25.5 } },
+    ],
   },
   {
     id: 'contact',
@@ -222,26 +266,28 @@ export const CHAPTERS: Chapter[] = [
     body: 'Alternance de 12 mois à partir de septembre 2026 (3 semaines en entreprise / 1 semaine à l’école), missions freelance et postes à temps plein. Dites-moi ce qu’il faut faire décoller.',
     stack: ['Français · Anglais B2 · Russe (notions)', 'Astronomie · aéronautique · spéléologie'],
     align: 'center',
-    model: 'rafale',
+    model: 'apache',
     pose: {
-      rafale: 1,
+      rafale: 0,
       apache: 1,
-      mq9: 1,
-      spread: 1,
-      yaw: 0,
-      pitch: 0,
-      roll: 0,
-      posY: 0,
-      camAzimuth: 0.05,
+      mq9: 0,
+      yaw: -0.12,
+      pitch: 0.03,
+      roll: -0.05,
+      posY: 0.05,
+      camAzimuth: 5.2,
       camElevation: 0.2,
-      camDistance: 30,
-      camTargetY: -1.6,
+      camDistance: 24,
+      camTargetY: -2.5,
       camTargetZ: 0,
       camShiftX: 0,
-      rotor: 0.1,
-      propeller: 0.1,
-      explode: 0.15,
-      scan: 0.1,
+      explode: 0,
+      canopy: 0,
+      gear: 0,
+      rotor: 0.35,
+      propeller: 0,
+      sensor: 0,
+      scan: 0.15,
       labels: 0,
       overlay: 0.5,
       glow: 0.95,

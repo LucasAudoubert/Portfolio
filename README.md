@@ -16,7 +16,7 @@ mécanismes (verrière, train, rotor, hélice, tourelle, vue éclatée).
 
 | Couche | Rôle |
 | --- | --- |
-| `src/data/chapters.ts` | contenu éditorial + pose du rig par chapitre |
+| `src/data/chapters.ts` | contenu éditorial, pose du rig et jalons par chapitre |
 | `src/data/models.ts` | fiche technique des appareils, offsets d'éclatement, annotations |
 | `src/animation/sequence.ts` | la timeline scroll → rig (Anime.js `onScroll`) |
 | `src/three/hologram/scene.ts` | renderer, caméra |
@@ -25,6 +25,13 @@ mécanismes (verrière, train, rotor, hélice, tourelle, vue éclatée).
 | `src/three/hologram/overlay.ts` | axes, cotes, indicateur de rotation, règle de balayage |
 | `src/three/hologram/rig.ts` | `HologramRig` + `applyRig()` (une passe par frame) |
 | `src/components/HologramStage.tsx` | canvas + annotations HTML projetées + HUD |
+
+**Un appareil par chapitre.** Le hero et la section « Full-stack » montrent le
+Rafale, la cybersécurité le MQ-9, l'IA l'Apache ; « Tout, à plat » détaille le
+Rafale éclaté et le contact referme sur l'Apache. À l'arrivée sur un chapitre,
+l'appareil est **entier** ; les `milestones` de la timeline le font **exploser
+au scroll** (verrière, train, rotor, puis sous-ensembles) avant la transition
+suivante.
 
 Le rendu est volontairement sans éclairage ni tone mapping : tout est ligne
 blanche et point blanc, l'image est construite par l'épaisseur et l'opacité.
@@ -43,6 +50,13 @@ Toutes les lignes et tous les points passent par `createGlowLineMaterial` /
 
 C'est un effet de shading, pas un bloom plein écran : moins coûteux, et il
 préserve le côté blueprint.
+
+### Typographie
+
+Inter Variable et JetBrains Mono Variable sont **auto-hébergées**
+(`@fontsource-variable`) : la pile déclarait `Inter` mais ne chargeait rien, le
+site tombait donc sur la police système. Le texte est posé sur un panneau
+opaque (`.panel`) pour rester lisible quelle que soit la densité du filaire.
 
 ### Interaction
 
@@ -124,6 +138,9 @@ npm run shot -- --url "http://localhost:5173/inspector.html?model=rafale.glb&vie
 * `tools/shoot.mjs` : capture d'écran headless via le Edge installé
   (`--scroll` pour se placer dans la page, `--click` + `--evalclick` pour
   déclencher une annotation).
+* `tools/probe-scroll.mjs` : relève les valeurs du rig à plusieurs positions de
+  scroll, pour vérifier les timings de pose au lieu de les estimer à l'œil
+  (le rig est exposé en dev sur `window.__hologram`).
 * `tools/band-probe.mjs` : profil des triangles par tranche selon un axe
   (`node tools/band-probe.mjs public/models/rafale.glb airframe z`), pour
   régler une découpe par région.

@@ -48,24 +48,21 @@ export default function App() {
         </Suspense>
       </div>
 
-      <header className="fixed inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-5 sm:px-12 lg:px-24">
-        <a href="#hero" className="group font-mono text-xs tracking-[0.3em] text-chalk uppercase">
+      <header className="fixed inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-5 sm:px-10 lg:px-20">
+        <a href="#hero" className="tag text-chalk transition-colors hover:text-white">
           Lucas Audoubert
           <span className="text-steel"> / Portfolio</span>
         </a>
-        <nav className="flex items-center gap-6">
+        <nav className="flex items-center gap-7">
           <a
             href="https://github.com/LucasAudoubert/Portfolio"
             target="_blank"
             rel="noreferrer"
-            className="hidden font-mono text-xs tracking-[0.3em] text-mist uppercase transition-colors hover:text-chalk sm:block"
+            className="tag hidden text-mist transition-colors hover:text-chalk sm:block"
           >
             GitHub
           </a>
-          <a
-            href="#contact"
-            className="font-mono text-xs tracking-[0.3em] text-mist uppercase transition-colors hover:text-chalk"
-          >
+          <a href="#contact" className="tag text-mist transition-colors hover:text-chalk">
             Contact
           </a>
         </nav>

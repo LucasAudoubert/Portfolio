@@ -26,11 +26,10 @@ export type HologramRig = {
   roll: number
   posY: number
 
-  // Presence per airframe (0..1). At spread = 1 the three line up.
+  // Presence per airframe (0..1). Exactly one is on screen at a time.
   rafale: number
   apache: number
   mq9: number
-  spread: number
 
   // Mechanisms
   canopy: number // 0..1 canopy slid aft
@@ -70,7 +69,6 @@ export const INITIAL_RIG: HologramRig = {
   rafale: 1,
   apache: 0,
   mq9: 0,
-  spread: 0,
 
   canopy: 0,
   gear: 0,
@@ -95,10 +93,6 @@ export interface StageModel {
   model: HologramModel
   overlay: HologramOverlay
 }
-
-/** Where each airframe sits when the exploded line-up is shown. */
-const SPREAD_X: Record<string, number> = { rafale: -11.5, apache: 0, mq9: 11.5 }
-const SPREAD_SCALE = 0.6
 
 /** Rafale landing gear: two meshes, only one of them shown at a time. */
 const GEAR_SWAP: Record<string, { up: string; down: string }> = {
@@ -138,17 +132,11 @@ export function applyRig(stage: StageModel[], rig: HologramRig, camera: THREE.Pe
     overlay.group.visible = active && rig.overlay > 0.02
     if (!active) continue
 
-    // --- placement ---------------------------------------------------------
-    const spread = rig.spread
-    model.root.position.x = (SPREAD_X[model.id] ?? 0) * spread
-    const scale = 1 + (SPREAD_SCALE - 1) * spread
-    model.root.scale.setScalar(scale)
-
     // --- attitude ----------------------------------------------------------
     model.stage.rotation.order = 'YXZ'
     model.stage.rotation.set(
-      rig.pitch + Math.sin(time * 0.31 + model.root.position.x) * 0.012,
-      rig.yaw + spread * time * 0.05,
+      rig.pitch + Math.sin(time * 0.31) * 0.012,
+      rig.yaw,
       rig.roll,
     )
     model.stage.position.y = rig.posY + Math.sin(time * 0.8) * 0.04
@@ -189,7 +177,7 @@ export function applyRig(stage: StageModel[], rig: HologramRig, camera: THREE.Pe
 
     // The scan runs bottom-to-top through the airframe, on the line-up too.
     const scanT = THREE.MathUtils.clamp(rig.scan, 0, 1)
-    const halfY = model.size.y * 0.5 * scale
+    const halfY = model.size.y * 0.5
     overlay.scan.position.y = THREE.MathUtils.lerp(-halfY - 1.1, halfY + 1.1, scanT)
 
     // --- glow: hand every shader the ruler's current world height ----------
@@ -205,12 +193,12 @@ export function applyRig(stage: StageModel[], rig: HologramRig, camera: THREE.Pe
   }
 
   // --- camera --------------------------------------------------------------
-  const focus = THREE.MathUtils.clamp(rig.focusActive * (1 - rig.spread), 0, 1)
+  const focus = THREE.MathUtils.clamp(rig.focusActive, 0, 1)
   const aspect = camera.aspect
   const fit = THREE.MathUtils.clamp(1.45 / aspect, 1, 2.6)
   const wide = THREE.MathUtils.smoothstep(aspect, 0.8, 1.2)
   const distance = THREE.MathUtils.lerp(
-    rig.camDistance * fit * (1 + 0.35 * rig.spread),
+    rig.camDistance * fit,
     rig.focusDistance * fit,
     focus,
   )
@@ -218,7 +206,7 @@ export function applyRig(stage: StageModel[], rig: HologramRig, camera: THREE.Pe
   // right vector so the airframe moves sideways without re-aiming. Focusing
   // keeps (and slightly increases) that offset, so the framed part still stays
   // clear of the copy.
-  const shiftX = rig.camShiftX * wide * (1 - rig.spread) * (1 + 0.4 * focus)
+  const shiftX = rig.camShiftX * wide * (1 + 0.4 * focus)
   const visibleHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
   const baseTargetY = rig.camTargetY - (1 - wide) * 0.14 * visibleHeight
   const targetY = THREE.MathUtils.lerp(baseTargetY, rig.focusY, focus)

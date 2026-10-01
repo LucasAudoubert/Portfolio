@@ -1,18 +1,19 @@
 @import 'tailwindcss';
 
 /* ------------------------------------------------------------------
- * Design tokens - monochrome "Flanker" palette (gray / black / white).
- * Exposed to Tailwind as utilities: bg-ink, text-mist, border-steel, etc.
+ * Design tokens - monochrome "blueprint" palette (gray / black / white).
+ * Exposed to Tailwind as utilities: bg-ink, text-fog, border-steel, etc.
  * ------------------------------------------------------------------ */
 @theme {
-  --color-ink: #0a0a0b; /* page background - near black */
-  --color-graphite: #1c1d21; /* panels */
-  --color-steel: #4a4d55; /* borders / muted lines */
-  --color-mist: #a3a7b0; /* body text */
-  --color-chalk: #f2f3f5; /* headings - near white */
+  --color-ink: #060607; /* page background - near black */
+  --color-graphite: #16171a; /* panels */
+  --color-steel: #5c6068; /* borders / muted lines */
+  --color-mist: #9aa0ab; /* secondary text */
+  --color-fog: #ccd1da; /* body text - readable over the wireframe */
+  --color-chalk: #f5f6f8; /* headings - near white */
 
-  --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  --font-display: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', Consolas, monospace;
 }
 
 /* Base layer: static background, no scrollbar jank */
@@ -24,8 +25,10 @@
 
   body {
     margin: 0;
-    color: var(--color-mist);
+    color: var(--color-fog);
     font-family: var(--font-display);
+    font-size: 16px;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     overflow-x: hidden;
@@ -46,4 +49,44 @@
     linear-gradient(to bottom, rgb(255 255 255 / 0.035) 1px, transparent 1px);
   background-size: 72px 72px;
   mask-image: radial-gradient(ellipse at center, black 40%, transparent 85%);
+}
+
+/* ------------------------------------------------------------------
+ * Copy panel: every chapter's text sits on an opaque technical plate so
+ * the wireframe can never eat into it. Solid fill (no backdrop-filter) so
+ * scrolling stays cheap.
+ * ------------------------------------------------------------------ */
+.panel {
+  position: relative;
+  background-color: rgb(6 6 7 / 0.82);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  padding: 1.75rem 1.75rem 1.6rem;
+}
+
+/* L-shaped tick in the top-left corner of the panel */
+.panel::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 14px;
+  height: 14px;
+  border-top: 1px solid var(--color-chalk);
+  border-left: 1px solid var(--color-chalk);
+}
+
+/* Monospace label used for eyebrows and readouts */
+.tag {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+}
+
+/* Annotations: legible over any wireframe density */
+.annotation {
+  font-family: var(--font-mono);
+  text-shadow:
+    0 0 3px rgb(0 0 0 / 1),
+    0 1px 8px rgb(0 0 0 / 0.95);
 }

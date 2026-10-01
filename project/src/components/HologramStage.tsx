@@ -37,14 +37,14 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
   const labelRefs = useRef(new Map<string, HTMLElement>())
   const readoutRef = useRef<HTMLDivElement>(null)
   const [progress, setProgress] = useState<number | null>(0)
-  const [activeIndex, setActiveIndex] = useState(0)
+  /** Airframe actually on screen - drives annotations and the datasheet. */
+  const [displayModel, setDisplayModel] = useState<ModelId>('rafale')
   /** Annotation currently framing the camera, if any. */
   const [focusedKey, setFocusedKey] = useState<string | null>(null)
   const focusedRef = useRef<string | null>(null)
   const focusApiRef = useRef<((reference: Reference) => void) | null>(null)
 
-  const active = CHAPTERS[activeIndex]
-  const activeModel = MODELS.find((model) => model.id === active.model)!
+  const shown = MODELS.find((model) => model.id === displayModel)!
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -116,11 +116,12 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
     // and simply takes over again as soon as the reader scrolls.
     let currentChapter = 0
     let activeReferences: Reference[] = []
+    let shownModel: ModelId = 'rafale'
     const focus = { value: 0, intent: false }
     let focusAnimation: { revert: () => void } | null = null
 
     const focusOn = (reference: Reference) => {
-      const model = byId.get(CHAPTERS[currentChapter]?.model ?? 'rafale')
+      const model = byId.get(shownModel)
       if (!model) return
 
       const key = referenceKey(reference)
@@ -182,6 +183,20 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
 
     focusApiRef.current = focusOn
 
+    if (import.meta.env.DEV) {
+      // Dev-only handle for tuning poses and the timeline from the console.
+      ;(window as unknown as Record<string, unknown>).__hologram = {
+        rig,
+        timeline,
+        get chapter() {
+          return currentChapter
+        },
+        get models() {
+          return stage
+        },
+      }
+    }
+
     // --- render loop -------------------------------------------------------
     const projected = new THREE.Vector3()
     const anchor = new THREE.Vector3()
@@ -201,7 +216,7 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
       }
       if (opacity < 0.05) return
 
-      const model = byId.get(CHAPTERS[currentChapter]?.model ?? 'rafale')
+      const model = byId.get(shownModel)
       if (!model || !model.root.visible) return
       if (!activeReferences.length) return
 
@@ -230,6 +245,9 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
         .sort((a, b) => a.y - b.y)
 
       for (const entry of entries) {
+        // The elements are re-created when the airframe changes, so the fade
+        // has to be applied per label rather than once globally.
+        entry.element.style.opacity = String(opacity)
         // The copy owns one side of the layout; an annotation that would land
         // on top of it is simply not drawn this frame.
         const hidden = Number.isNaN(entry.x) || inCopyZone(entry.x, entry.y, viewWidth, viewHeight)
@@ -245,8 +263,13 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
           y += 29
         }
         placed.push({ x: entry.x, y })
-        entry.element.dataset.flip = entry.x > viewWidth * 0.5 ? '1' : '0'
-        entry.element.style.transform = `translate3d(${entry.x}px, ${y}px, 0) translateY(-50%)`
+        // Labels flip to the other side of their anchor so they sit beside the
+        // airframe instead of on top of it (the dot stays on the anchor).
+        const flip = entry.x > viewWidth * 0.5
+        entry.element.dataset.flip = flip ? '1' : '0'
+        entry.element.style.transform = `translate3d(${entry.x}px, ${y}px, 0) translateY(-50%)${
+          flip ? ' translateX(-100%)' : ''
+        }`
       }
     }
 
@@ -255,15 +278,33 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
       const delta = Math.min(0.05, (now - previous) / 1000)
       previous = now
 
-      // Chapter tracking is cheap and independent from the timeline easing.
+      // Chapter tracking (copy placement) is cheap and independent from the
+      // timeline easing: it only decides which half of the viewport owns the
+      // layout, so the annotations can avoid it.
       const range = scrollTarget.scrollHeight - window.innerHeight
       const progress = range > 0 ? Math.min(1, Math.max(0, window.scrollY / range)) : 0
       const index = Math.round(progress * (CHAPTERS.length - 1))
       if (index !== chapterSeen) {
         chapterSeen = index
         currentChapter = index
-        activeReferences = MODELS.find((model) => model.id === CHAPTERS[index].model)!.references
-        setActiveIndex(index)
+      }
+
+      // Which airframe is on screen is decided by the rig itself, not by the
+      // scroll position: annotations and the datasheet must switch exactly when
+      // the crossfade does, otherwise labels point at a model that is leaving.
+      let dominant: ModelId = 'rafale'
+      let presence = -1
+      for (const config of MODELS) {
+        const value = rig[config.id] as number
+        if (value > presence) {
+          presence = value
+          dominant = config.id
+        }
+      }
+      if (dominant !== shownModel) {
+        shownModel = dominant
+        activeReferences = MODELS.find((model) => model.id === dominant)!.references
+        setDisplayModel(dominant)
         unfocus()
       }
 
@@ -282,7 +323,7 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
       // sixty times a second.
       const readout = readoutRef.current
       if (readout) {
-        const model = byId.get(CHAPTERS[currentChapter]?.model ?? 'rafale')
+        const model = byId.get(shownModel)
         const spin = model?.spins[0]
         const rpm = spin ? Math.round(rig[spin.key as keyof HologramRig] * spin.speed * 955) : 0
         readout.textContent = [
@@ -319,7 +360,7 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
       {/* Annotations: positioned every frame from their 3D anchors, and
           clickable to frame the annotated part. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        {activeModel.references.map((reference) => {
+        {shown.references.map((reference) => {
           const key = referenceKey(reference)
           return (
             <button
@@ -336,14 +377,14 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
               className="group pointer-events-auto absolute top-0 left-0 cursor-crosshair opacity-0 transition-opacity duration-500 will-change-transform focus-visible:outline focus-visible:outline-chalk"
             >
               <span className="flex items-center gap-2 group-data-[flip=1]:flex-row-reverse">
-                <span className="size-1.5 shrink-0 rotate-45 border border-chalk bg-transparent transition-all duration-300 group-data-[focused=1]:bg-chalk group-data-[focused=1]:shadow-[0_0_10px_rgba(255,255,255,0.8)]" />
-                <span className="h-px w-6 shrink-0 bg-steel/80 transition-all duration-300 group-data-[focused=1]:w-9 group-data-[focused=1]:bg-chalk sm:w-10" />
-                <span className="flex flex-col leading-tight whitespace-nowrap [text-shadow:0_1px_6px_rgba(0,0,0,0.95)]">
-                  <span className="font-mono text-[10px] tracking-[0.22em] text-chalk uppercase transition-colors group-data-[focused=1]:text-white">
+                <span className="size-2 shrink-0 rotate-45 border border-chalk bg-transparent shadow-[0_0_8px_rgba(0,0,0,0.9)] transition-all duration-300 group-data-[focused=1]:bg-chalk group-data-[focused=1]:shadow-[0_0_12px_rgba(255,255,255,0.85)]" />
+                <span className="h-px w-7 shrink-0 bg-chalk/70 transition-all duration-300 group-data-[focused=1]:w-10 group-data-[focused=1]:bg-chalk sm:w-11" />
+                <span className="annotation flex flex-col leading-tight whitespace-nowrap">
+                  <span className="text-[11.5px] font-medium tracking-[0.2em] text-white uppercase">
                     {reference.text}
                   </span>
                   {reference.value && (
-                    <span className="font-mono text-[9px] tracking-[0.18em] text-mist/80 uppercase">
+                    <span className="mt-0.5 text-[10px] tracking-[0.16em] text-fog/90 uppercase">
                       {reference.value}
                     </span>
                   )}
@@ -357,18 +398,18 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
       {/* Live technical readout */}
       <div
         ref={readoutRef}
-        className="pointer-events-none fixed top-20 right-6 hidden font-mono text-[10px] leading-relaxed tracking-[0.18em] whitespace-pre text-mist/80 uppercase md:block lg:right-10"
+        className="tag pointer-events-none fixed top-24 right-6 hidden leading-[1.9] whitespace-pre text-fog/90 md:block lg:right-10"
       />
 
       {/* Datasheet for the airframe in focus */}
-      <div className="pointer-events-none fixed bottom-6 left-6 hidden font-mono text-[10px] tracking-[0.18em] text-mist/70 uppercase sm:left-12 md:block lg:left-24">
-        <p className="text-chalk">{activeModel.serial}</p>
-        <p className="mt-1">{activeModel.name}</p>
-        <dl className="mt-3 grid grid-cols-[auto_auto] gap-x-4 gap-y-1">
-          {activeModel.specs.map(([key, value]) => (
+      <div className="tag pointer-events-none fixed bottom-6 left-6 hidden tracking-[0.16em] md:block lg:left-20">
+        <p className="text-[12px] text-chalk">{shown.serial}</p>
+        <p className="mt-1 text-mist">{shown.name}</p>
+        <dl className="mt-3 grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-[11px]">
+          {shown.specs.map(([key, value]) => (
             <div key={key} className="col-span-2 grid grid-cols-subgrid">
               <dt className="text-steel">{key}</dt>
-              <dd className="text-mist/80">{value}</dd>
+              <dd className="text-fog/90">{value}</dd>
             </div>
           ))}
         </dl>
@@ -376,7 +417,7 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
 
       <p
         aria-live="polite"
-        className={`absolute inset-x-0 bottom-10 text-center font-mono text-xs tracking-[0.3em] text-steel uppercase transition-opacity duration-700 ${
+        className={`tag absolute inset-x-0 bottom-10 text-center text-fog transition-opacity duration-700 ${
           progress === null ? 'opacity-0' : 'opacity-100'
         }`}
       >
