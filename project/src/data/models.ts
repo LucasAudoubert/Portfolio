@@ -44,8 +44,6 @@ export interface ModelConfig {
   spins?: Array<{ parts: string[]; axis: 'x' | 'y' | 'z'; speed: number; key: SpinChannel }>
   /** Annotations pinned to parts of this airframe. */
   references: Reference[]
-  /** Licence line, shown because the model is not ours. */
-  credit: string
 }
 
 export const MODELS: ModelConfig[] = [
@@ -56,12 +54,17 @@ export const MODELS: ModelConfig[] = [
     serial: 'AIRFRAME / 001',
     specs: [
       ['CLASS', 'MULTIROLE'],
-      ['PARTS', '10'],
+      ['PARTS', '15'],
       ['SPAN', '6.90'],
       ['LENGTH', '10.00'],
     ],
     dimension: 'SPAN 6.90 / L 10.00',
     explode: {
+      radome: [0, -0.25, -1.6],
+      'wing-right': [1.85, -0.15, 0.2],
+      'wing-left': [-1.85, -0.15, 0.2],
+      fin: [0, 1.45, 0.45],
+      engines: [0, -0.2, 1.65],
       canopy: [0, 1.25, 0.45],
       cockpit: [0, 0.85, 0.2],
       hud: [0, 1.5, -0.75],
@@ -73,13 +76,13 @@ export const MODELS: ModelConfig[] = [
       pods: [0, -1.2, 0.35],
     },
     references: [
-      { text: 'Radome', value: '01', anchor: 'airframe' },
-      { text: 'Verrière', value: '02', anchor: 'canopy' },
-      { text: 'HUD', value: '03', anchor: 'hud' },
-      { text: 'Pylônes', value: '04', anchor: 'rails' },
-      { text: 'Train', value: '05', anchor: 'gear-deployed' },
+      { text: 'Radome', value: 'RADAR AESA', anchor: 'radome' },
+      { text: 'Verrière', value: 'POSTE AVANT', anchor: 'canopy' },
+      { text: 'Panneau de voilure', value: 'STRUCTURE', anchor: 'wing-right' },
+      { text: 'Dérive', value: 'COMMANDES', anchor: 'fin' },
+      { text: 'Nacelles', value: 'M88 ×2', anchor: 'engines' },
+      { text: 'Points d’emport', value: 'PYLÔNES', anchor: 'rails' },
     ],
-    credit: 'Sketchfab · CC BY 4.0',
   },
   {
     id: 'apache',
@@ -108,7 +111,6 @@ export const MODELS: ModelConfig[] = [
       { text: 'Points d’emport', value: 'HELLFIRE ×8', anchor: 'weapons' },
       { text: 'Dérive', value: 'ANTI-TORQUE', anchor: 'tail' },
     ],
-    credit: 'Sketchfab · CC BY 4.0',
   },
   {
     id: 'mq9',
@@ -174,7 +176,6 @@ export const MODELS: ModelConfig[] = [
       { text: 'Train', value: '3 POINTS', anchor: 'wheel-l' },
       { text: 'Antennes', value: 'SATCOM', anchor: 'antennas' },
     ],
-    credit: 'Sketchfab · CC BY 4.0',
   },
 ]
 

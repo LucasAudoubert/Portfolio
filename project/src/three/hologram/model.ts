@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import type { ModelConfig } from '../../data/models'
+import { createGlowLineMaterial, createGlowPointMaterial, type GlowMaterial } from './materials'
 
 /**
  * Turns one prepared GLB (see tools/optimize-models.mjs) into a hologram: a
@@ -16,6 +17,8 @@ export interface HologramPart {
   object: THREE.Group
   /** Canonical-space centre of the part (annotation anchor). */
   center: THREE.Vector3
+  /** Bounding-sphere radius, used to frame the part when focused. */
+  radius: number
   /** Local position at rest; the rig restores this at explode = 0. */
   rest: THREE.Vector3
   /** Offset applied at explode = 1. */
@@ -48,6 +51,8 @@ export interface HologramModel {
   size: THREE.Vector3
   /** Materials whose opacity the rig scales, with their base value. */
   fade: Array<{ material: THREE.Material; base: number }>
+  /** Shader materials that follow the scanning ruler. */
+  glowMaterials: GlowMaterial[]
   dispose(): void
 }
 
@@ -66,26 +71,9 @@ export async function loadHologramModel(config: ModelConfig): Promise<HologramMo
   const source = gltf.scene
   source.updateMatrixWorld(true)
 
-  const wireMaterial = new THREE.LineBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: WIRE_OPACITY,
-    depthWrite: false,
-  })
-  const edgeMaterial = new THREE.LineBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: EDGE_OPACITY,
-    depthWrite: false,
-  })
-  const pointMaterial = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 1.5,
-    sizeAttenuation: false,
-    transparent: true,
-    opacity: POINT_OPACITY,
-    depthWrite: false,
-  })
+  const wireMaterial = createGlowLineMaterial(WIRE_OPACITY)
+  const edgeMaterial = createGlowLineMaterial(EDGE_OPACITY)
+  const pointMaterial = createGlowPointMaterial(POINT_OPACITY, 1.6)
 
   const root = new THREE.Group()
   root.name = `${config.id}-root`
@@ -110,7 +98,6 @@ export async function loadHologramModel(config: ModelConfig): Promise<HologramMo
     box.applyMatrix4(mesh.matrixWorld)
     bounds.union(box)
     boxes.set(mesh.name, box)
-
     // WireframeGeometry and EdgesGeometry both bake positions into a new
     // buffer, so they carry the node transform copied onto the layer.
     const wire = new THREE.LineSegments(new THREE.WireframeGeometry(geometry), wireMaterial)
@@ -132,6 +119,7 @@ export async function loadHologramModel(config: ModelConfig): Promise<HologramMo
       name: mesh.name,
       object,
       center: box.getCenter(new THREE.Vector3()),
+      radius: box.getBoundingSphere(new THREE.Sphere()).radius,
       rest: new THREE.Vector3(),
       explode: new THREE.Vector3(...(config.explode[mesh.name] ?? [0, 0, 0])),
     })
@@ -187,10 +175,11 @@ export async function loadHologramModel(config: ModelConfig): Promise<HologramMo
     spins,
     size: bounds.getSize(new THREE.Vector3()),
     fade: [
-      { material: wireMaterial, base: WIRE_OPACITY },
-      { material: edgeMaterial, base: EDGE_OPACITY },
-      { material: pointMaterial, base: POINT_OPACITY },
+      { material: wireMaterial, base: wireMaterial.baseOpacity },
+      { material: edgeMaterial, base: edgeMaterial.baseOpacity },
+      { material: pointMaterial, base: pointMaterial.baseOpacity },
     ],
+    glowMaterials: [wireMaterial, edgeMaterial, pointMaterial],
     dispose,
   }
 }

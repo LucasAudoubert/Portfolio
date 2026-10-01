@@ -1,6 +1,13 @@
 import type { HologramRig } from '../three/hologram/rig'
 import type { ModelId } from './models'
 
+/** A position held, rendered as a technical row under the chapter copy. */
+export interface Role {
+  title: string
+  org: string
+  period: string
+}
+
 /**
  * One full-viewport scroll stop.
  *
@@ -15,8 +22,10 @@ export interface Chapter {
   eyebrow: string
   title: string
   body: string
-  /** Bullet list rendered as a technical table (optional). */
+  /** Lines rendered as a technical list (stack, tools, constraints). */
   stack?: string[]
+  /** Positions rendered as a compact table. */
+  roles?: Role[]
   align: 'left' | 'right' | 'center'
   /** Airframe in focus for this stop (drives annotations). */
   model: ModelId
@@ -26,9 +35,14 @@ export interface Chapter {
 export const CHAPTERS: Chapter[] = [
   {
     id: 'hero',
-    eyebrow: 'Main portfolio · 2026',
+    eyebrow: 'Lucas Audoubert · portfolio 2026',
     title: 'Systèmes à l’état brut.',
-    body: 'Développeur full-stack, cybersécurité et IA. Trois appareils, un même langage : des lignes, des mesures, un système lisible.',
+    body: 'Développeur full-stack et chef de projet digital. Trois appareils, un même langage : des lignes, des mesures, un système lisible — et testable.',
+    stack: [
+      'Full-stack · IA · Cybersécurité',
+      'Alternance 12 mois — septembre 2026',
+      '3 semaines entreprise / 1 semaine école',
+    ],
     align: 'center',
     model: 'rafale',
     pose: {
@@ -56,8 +70,16 @@ export const CHAPTERS: Chapter[] = [
     id: 'fullstack',
     eyebrow: '01 / Full-stack',
     title: 'Du prototype au poste de pilotage.',
-    body: 'Interfaces, API, données temps réel : la même exigence de bout en bout, du schéma de base au pixel. Le Rafale ouvre sa verrière pendant que la caméra descend sur le poste.',
-    stack: ['TypeScript · React · Node', 'Postgres · Redis · queues', 'CI/CD · observabilité'],
+    body: 'Chez Green Finance : conception des moteurs de calcul — projection de flux de trésorerie, intérêts composés, échéanciers d’amortissement — et des simulations multi-scénarios qui les exploitent en temps réel. Architecture, choix techniques, workflow Git, collaboration design et déploiement ensuite.',
+    stack: [
+      'TypeScript · React · Next.js · Vue · Nuxt',
+      'Node · Express · Python · Java · Spring Boot',
+      'PostgreSQL · MongoDB · Docker · Jest',
+    ],
+    roles: [
+      { title: 'Lead developer · solution integration', org: 'Green Finance', period: '2026' },
+      { title: 'Développeur full-stack', org: 'Indépendant', period: '2024 — aujourd’hui' },
+    ],
     align: 'right',
     model: 'rafale',
     pose: {
@@ -71,13 +93,13 @@ export const CHAPTERS: Chapter[] = [
       posY: 0,
       camAzimuth: 3.6,
       camElevation: 0.38,
-      camDistance: 14,
-      camTargetY: -0.5,
-      camTargetZ: -1.8,
-      camShiftX: -1.7,
+      camDistance: 16.2,
+      camTargetY: -0.7,
+      camTargetZ: -1.6,
+      camShiftX: -1.9,
       canopy: 1,
       gear: 0.35,
-      explode: 0.3,
+      explode: 0.24,
       scan: 0.55,
       labels: 1,
       overlay: 1,
@@ -88,8 +110,13 @@ export const CHAPTERS: Chapter[] = [
     id: 'security',
     eyebrow: '02 / Cybersécurité',
     title: 'Observer avant de défendre.',
-    body: 'Audit, durcissement, détection. Sur un drone, tout commence par la tourelle : collecter la bonne donnée, au bon endroit, puis la protéger. Le balayage traverse la cellule pendant que le capteur tourne.',
-    stack: ['Audit applicatif · OWASP', 'Durcissement · IAM · secrets', 'Détection · logs · réponse'],
+    body: 'Sécurité applicative : authentification et gestion des accès, durcissement, revue de code, secrets. À la rentrée, le Master IA & Cybersécurité prend le relais. Le capteur tourne pendant que le balayage traverse la cellule.',
+    stack: [
+      'Auth · JWT · gestion des accès',
+      'Sécurité applicative · durcissement · secrets',
+      'Docker · Postman · PowerShell',
+    ],
+    roles: [{ title: 'Master IA & Cybersécurité', org: 'IIM — Pôle Léonard-de-Vinci', period: '2026 —' }],
     align: 'left',
     model: 'mq9',
     pose: {
@@ -120,8 +147,9 @@ export const CHAPTERS: Chapter[] = [
     id: 'ai',
     eyebrow: '03 / Intelligence artificielle',
     title: 'Faire tourner le système.',
-    body: 'Modèles, vision, orchestration : l’IA ne vaut que si elle tourne en production. Le rotor s’emballe, les pales sortent de la cellule et chaque sous-ensemble devient addressable.',
-    stack: ['Vision · détection · segmentation', 'LLM · RAG · agents', 'Inférence · GPU · coûts'],
+    body: 'Intégration d’IA en production : OCR, LLM, RAG, agents et MCP. Un modèle ne vaut que s’il tourne, se mesure et se surveille. Le rotor s’emballe, les pales sortent de la cellule et chaque sous-ensemble devient addressable.',
+    stack: ['OCR · LLM · RAG · MCP · LoRa', 'Vision · détection · segmentation', 'Inférence · coûts · observabilité'],
+    roles: [{ title: 'Major de promotion — 3ᵉ année', org: 'IIM', period: '2024 — 2026' }],
     align: 'right',
     model: 'apache',
     pose: {
@@ -149,10 +177,18 @@ export const CHAPTERS: Chapter[] = [
   },
   {
     id: 'architecture',
-    eyebrow: '04 / Architecture',
+    eyebrow: '04 / Pilotage',
     title: 'Tout, à plat.',
-    body: 'Vue éclatée : chaque sous-ensemble est un module indépendant, adressable, testable. C’est la même discipline que pour un service — une frontière nette, un contrat clair.',
-    stack: ['Frontières · contrats · versions', 'Tests · observabilité', 'Revue · documentation'],
+    body: 'Chef de projet digital : équipes pluridisciplinaires — dev, design, marketing —, planning Gantt, backlog ClickUp, suivi GitHub Projects et engagement de délais. La vue éclatée raconte la même discipline : chaque sous-ensemble est un module indépendant.',
+    stack: [
+      'Pilotage transverse · interface client',
+      'Gantt · ClickUp · GitHub Issues / Projects',
+      'Agile · Scrum · qualité de livraison',
+    ],
+    roles: [
+      { title: 'Chef de projet digital', org: 'IIM — Bourse au projet / Culture du mouvement', period: '2025 — 2026' },
+      { title: 'Électrotechnicien', org: 'Faymonville — Luxembourg', period: '2022 — 2023' },
+    ],
     align: 'center',
     model: 'mq9',
     pose: {
@@ -183,7 +219,8 @@ export const CHAPTERS: Chapter[] = [
     id: 'contact',
     eyebrow: '05 / Contact',
     title: 'Parlons de votre système.',
-    body: 'Disponible pour des missions freelance et des postes à temps plein. Dites-moi ce qu’il faut faire décoller.',
+    body: 'Alternance de 12 mois à partir de septembre 2026 (3 semaines en entreprise / 1 semaine à l’école), missions freelance et postes à temps plein. Dites-moi ce qu’il faut faire décoller.',
+    stack: ['Français · Anglais B2 · Russe (notions)', 'Astronomie · aéronautique · spéléologie'],
     align: 'center',
     model: 'rafale',
     pose: {

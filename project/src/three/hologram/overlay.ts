@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { HologramModel } from './model'
+import { createGlowLineMaterial, type GlowMaterial } from './materials'
 
 /**
  * The technical graphics that surround the airframe: reference axes, a
@@ -15,6 +16,8 @@ export interface HologramOverlay {
   /** Sweep rig; the rig slides it through the airframe along Y. */
   scan: THREE.Group
   fade: Array<{ material: THREE.Material; base: number }>
+  /** Shader materials that follow the scanning ruler. */
+  glowMaterials: GlowMaterial[]
   dispose(): void
 }
 
@@ -31,25 +34,10 @@ export function createHologramOverlay(model: HologramModel): HologramOverlay {
   const group = new THREE.Group()
   group.name = `${model.id}-overlay`
 
-  const axisMaterial = new THREE.LineBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: AXIS_OPACITY,
-    depthWrite: false,
-  })
-  const accentMaterial = new THREE.LineBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: ACCENT_OPACITY,
-    depthWrite: false,
-  })
+  const axisMaterial = createGlowLineMaterial(AXIS_OPACITY)
+  const accentMaterial = createGlowLineMaterial(ACCENT_OPACITY)
   /** The scanning ruler gets its own material so it can pulse on its own. */
-  const scanMaterial = new THREE.LineBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: SCAN_OPACITY,
-    depthWrite: false,
-  })
+  const scanMaterial = createGlowLineMaterial(SCAN_OPACITY)
 
   // --- reference axes through the origin ------------------------------------
   const half = model.size.clone().multiplyScalar(0.5)
@@ -179,10 +167,11 @@ export function createHologramOverlay(model: HologramModel): HologramOverlay {
     ring,
     scan,
     fade: [
-      { material: axisMaterial, base: AXIS_OPACITY },
-      { material: accentMaterial, base: ACCENT_OPACITY },
-      { material: scanMaterial, base: SCAN_OPACITY },
+      { material: axisMaterial, base: axisMaterial.baseOpacity },
+      { material: accentMaterial, base: accentMaterial.baseOpacity },
+      { material: scanMaterial, base: scanMaterial.baseOpacity },
     ],
+    glowMaterials: [axisMaterial, accentMaterial, scanMaterial],
     dispose: () => {
       group.traverse((object) => {
         const lines = object as THREE.LineSegments

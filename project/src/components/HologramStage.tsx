@@ -1,3 +1,4 @@
+import { animate } from 'animejs'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import * as THREE from 'three'
 import { createScrollTimeline } from '../animation/sequence'
@@ -18,8 +19,8 @@ interface HologramStageProps {
  * copy's half of the viewport are hidden rather than drawn on top of it.
  */
 const COPY_ZONE: Record<string, (x: number, y: number, width: number, height: number) => boolean> = {
-  left: (x, _y, width) => x < width * 0.44,
-  right: (x, _y, width) => x > width * 0.56,
+  left: (x, _y, width) => x < width * 0.46,
+  right: (x, _y, width) => x > width * 0.54,
   center: (_x, y, _width, height) => y > height * 0.52,
 }
 
@@ -33,10 +34,14 @@ const COPY_ZONE: Record<string, (x: number, y: number, width: number, height: nu
  */
 export function HologramStage({ scrollTargetRef }: HologramStageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const labelRefs = useRef(new Map<string, HTMLDivElement>())
+  const labelRefs = useRef(new Map<string, HTMLElement>())
   const readoutRef = useRef<HTMLDivElement>(null)
   const [progress, setProgress] = useState<number | null>(0)
   const [activeIndex, setActiveIndex] = useState(0)
+  /** Annotation currently framing the camera, if any. */
+  const [focusedKey, setFocusedKey] = useState<string | null>(null)
+  const focusedRef = useRef<string | null>(null)
+  const focusApiRef = useRef<((reference: Reference) => void) | null>(null)
 
   const active = CHAPTERS[activeIndex]
   const activeModel = MODELS.find((model) => model.id === active.model)!
@@ -105,14 +110,87 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
         if (!disposed) setProgress(null)
       })
 
+    // --- focus on an annotation -------------------------------------------
+    // Clicking a label dollies the camera onto that part. The rig owns the
+    // blend (see applyRig), so the scroll timeline keeps scrubbing underneath
+    // and simply takes over again as soon as the reader scrolls.
+    let currentChapter = 0
+    let activeReferences: Reference[] = []
+    const focus = { value: 0, intent: false }
+    let focusAnimation: { revert: () => void } | null = null
+
+    const focusOn = (reference: Reference) => {
+      const model = byId.get(CHAPTERS[currentChapter]?.model ?? 'rafale')
+      if (!model) return
+
+      const key = referenceKey(reference)
+      if (focusedRef.current === key) {
+        unfocus()
+        return
+      }
+
+      let centre: THREE.Vector3 | null = null
+      let radius = 2
+      if (typeof reference.anchor === 'string') {
+        const part = model.parts.find((candidate) => candidate.name === reference.anchor)
+        if (part) {
+          centre = part.center
+          radius = part.radius
+        }
+      } else {
+        centre = new THREE.Vector3(...reference.anchor)
+      }
+      if (!centre) return
+
+      rig.focusX = centre.x
+      rig.focusY = centre.y
+      rig.focusZ = centre.z
+      rig.focusDistance = THREE.MathUtils.clamp(radius * 2.6 + 5.5, 8, 21)
+
+      focus.intent = true
+      focusedRef.current = key
+      restingScrollY = window.scrollY
+      setFocusedKey(key)
+      focusAnimation?.revert()
+      focusAnimation = animate(focus, {
+        value: 1,
+        duration: 900,
+        ease: 'inOutSine',
+        onUpdate: () => {
+          rig.focusActive = focus.value
+          markDirty()
+        },
+      })
+    }
+
+    const unfocus = () => {
+      if (!focus.intent) return
+      focus.intent = false
+      focusedRef.current = null
+      setFocusedKey(null)
+      focusAnimation?.revert()
+      focusAnimation = animate(focus, {
+        value: 0,
+        duration: 550,
+        ease: 'outQuad',
+        onUpdate: () => {
+          rig.focusActive = focus.value
+          markDirty()
+        },
+      })
+    }
+
+    focusApiRef.current = focusOn
+
     // --- render loop -------------------------------------------------------
     const projected = new THREE.Vector3()
     const anchor = new THREE.Vector3()
-    let frame = 0
     let previous = performance.now()
     const start = previous
     let labelsShown = 0
     let chapterSeen = -1
+    let frame = 0
+    let restingScrollY = window.scrollY
 
     /** Places the DOM annotations for the chapter currently in view. */
     const placeLabels = () => {
@@ -161,19 +239,16 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
         let y = entry.y
         for (let step = 0; step < 8; step++) {
           const clash = placed.some(
-            (other) => Math.abs(other.x - entry.x) < 210 && Math.abs(other.y - y) < 22,
+            (other) => Math.abs(other.x - entry.x) < 200 && Math.abs(other.y - y) < 30,
           )
           if (!clash) break
-          y += 23
+          y += 29
         }
         placed.push({ x: entry.x, y })
         entry.element.dataset.flip = entry.x > viewWidth * 0.5 ? '1' : '0'
         entry.element.style.transform = `translate3d(${entry.x}px, ${y}px, 0) translateY(-50%)`
       }
     }
-
-    let currentChapter = 0
-    let activeReferences: Reference[] = []
 
     const loop = (now: number) => {
       frame = requestAnimationFrame(loop)
@@ -189,7 +264,11 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
         currentChapter = index
         activeReferences = MODELS.find((model) => model.id === CHAPTERS[index].model)!.references
         setActiveIndex(index)
+        unfocus()
       }
+
+      // Scrolling releases the camera: the sequence takes over again.
+      if (focus.intent && Math.abs(window.scrollY - restingScrollY) > 8) unfocus()
 
       if (!reducedMotion) dirty = true
       if (!dirty && stage.length === 0) return
@@ -210,6 +289,7 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
           `SCAN   ${String(Math.round(rig.scan * 100)).padStart(3, '0')}%`,
           spin ? `${spin.key === 'sensor' ? 'TURRET' : 'DRIVE '} ${String(rpm).padStart(4, '0')} RPM` : 'DRIVE   ---- RPM',
           `EXPL   ${String(Math.round(rig.explode * 100)).padStart(3, '0')}%`,
+          focus.intent ? 'CAM    LOCKED' : 'CAM    FREE',
         ].join('\n')
       }
     }
@@ -236,34 +316,42 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
     <>
       <canvas ref={canvasRef} className="block h-full w-full" aria-hidden="true" />
 
-      {/* Annotations: positioned every frame from their 3D anchors */}
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-        {activeModel.references.map((reference) => (
-          <div
-            key={referenceKey(reference)}
-            ref={(element) => {
-              if (element) labelRefs.current.set(referenceKey(reference), element)
-              else labelRefs.current.delete(referenceKey(reference))
-            }}
-            data-flip="0"
-            className="group absolute top-0 left-0 opacity-0 transition-opacity duration-500 will-change-transform"
-          >
-            <div className="flex items-center gap-2 group-data-[flip=1]:flex-row-reverse">
-              <span className="size-1.5 shrink-0 rotate-45 bg-chalk shadow-[0_0_6px_rgba(255,255,255,0.6)]" />
-              <span className="h-px w-6 shrink-0 bg-steel/80 sm:w-10" />
-              <span className="flex flex-col leading-tight whitespace-nowrap [text-shadow:0_1px_6px_rgba(0,0,0,0.95)]">
-                <span className="font-mono text-[10px] tracking-[0.22em] text-chalk uppercase">
-                  {reference.text}
-                </span>
-                {reference.value && (
-                  <span className="font-mono text-[9px] tracking-[0.18em] text-mist/80 uppercase">
-                    {reference.value}
+      {/* Annotations: positioned every frame from their 3D anchors, and
+          clickable to frame the annotated part. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {activeModel.references.map((reference) => {
+          const key = referenceKey(reference)
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-label={`Focus ${reference.text}`}
+              onClick={() => focusApiRef.current?.(reference)}
+              ref={(element) => {
+                if (element) labelRefs.current.set(key, element)
+                else labelRefs.current.delete(key)
+              }}
+              data-flip="0"
+              data-focused={focusedKey === key ? '1' : '0'}
+              className="group pointer-events-auto absolute top-0 left-0 cursor-crosshair opacity-0 transition-opacity duration-500 will-change-transform focus-visible:outline focus-visible:outline-chalk"
+            >
+              <span className="flex items-center gap-2 group-data-[flip=1]:flex-row-reverse">
+                <span className="size-1.5 shrink-0 rotate-45 border border-chalk bg-transparent transition-all duration-300 group-data-[focused=1]:bg-chalk group-data-[focused=1]:shadow-[0_0_10px_rgba(255,255,255,0.8)]" />
+                <span className="h-px w-6 shrink-0 bg-steel/80 transition-all duration-300 group-data-[focused=1]:w-9 group-data-[focused=1]:bg-chalk sm:w-10" />
+                <span className="flex flex-col leading-tight whitespace-nowrap [text-shadow:0_1px_6px_rgba(0,0,0,0.95)]">
+                  <span className="font-mono text-[10px] tracking-[0.22em] text-chalk uppercase transition-colors group-data-[focused=1]:text-white">
+                    {reference.text}
                   </span>
-                )}
+                  {reference.value && (
+                    <span className="font-mono text-[9px] tracking-[0.18em] text-mist/80 uppercase">
+                      {reference.value}
+                    </span>
+                  )}
+                </span>
               </span>
-            </div>
-          </div>
-        ))}
+            </button>
+          )
+        })}
       </div>
 
       {/* Live technical readout */}
@@ -284,9 +372,6 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
             </div>
           ))}
         </dl>
-        <p className="mt-3 font-mono text-[9px] tracking-[0.14em] whitespace-nowrap text-steel/70">
-          {activeModel.credit}
-        </p>
       </div>
 
       <p

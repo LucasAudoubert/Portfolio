@@ -28,6 +28,7 @@ const width = Number(arg('w', 1600))
 const height = Number(arg('h', 900))
 const wait = Number(arg('wait', 600))
 const scrollTo = arg('scroll', null)
+const clickSelector = arg('click', null)
 const expectReady = args.includes('--ready')
 
 const executablePath = EDGE_CANDIDATES.find((p) => existsSync(p))
@@ -76,6 +77,17 @@ try {
 
   if (scrollTo !== null) {
     await page.evaluate((y) => window.scrollTo(0, Number(y)), scrollTo)
+  }
+
+  if (clickSelector) {
+    await page.waitForSelector(clickSelector, { timeout: 15000 })
+    if (args.includes('--evalclick')) {
+      // Click without letting the browser scroll the element into view first.
+      await page.evaluate((selector) => document.querySelector(selector)?.click(), clickSelector)
+    } else {
+      await page.click(clickSelector)
+    }
+    console.log('clicked', clickSelector)
   }
 
   await new Promise((r) => setTimeout(r, wait))

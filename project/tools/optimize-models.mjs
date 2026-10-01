@@ -59,6 +59,20 @@ const MODELS = [
       'Rafale-Rails_8': 'rails',
       'Rafale-Pods_9': 'pods',
     },
+    /**
+     * The wings, fin, nozzles and radome are welded into a single airframe
+     * mesh. Carved out here so the exploded view can address them - cuts are
+     * ordered, each one takes its region out of what is left of `airframe`.
+     * Frame: nose -Z, span X (|x| max 3.44), up +Y (y -0.9..2.0).
+     */
+    splits: [
+      { from: 'airframe', into: 'radome', within: (_x, _y, z) => z < -3.55 },
+      { from: 'airframe', into: 'wing-right', within: (x, _y, z) => x > 1.6 && z > -2.4 },
+      { from: 'airframe', into: 'wing-left', within: (x, _y, z) => x < -1.6 && z > -2.4 },
+      // Fin first: it sits above the engine deck, inside the same z slice.
+      { from: 'airframe', into: 'fin', within: (_x, y, z) => z > 3.2 && y > 0.5 },
+      { from: 'airframe', into: 'engines', within: (_x, _y, z) => z > 3.2 },
+    ],
   },
   {
     id: 'apache',
@@ -169,10 +183,19 @@ function objToDocument(text, name) {
 // Steps
 // ---------------------------------------------------------------------------
 
+/** Placeholder names that Sketchfab exports put on the actual mesh nodes. */
+const GENERIC_NAME = /^(Object_\d+|Object\d+|\d+|mesh(_\d+)?)$/i
+/** Nodes that only exist to carry a transform or a scene. */
+const WRAPPER_NAME = /^(root|GLTF_SceneRootNode|Sketchfab_model|Scene|.*_Scene|__parts)$/i
+
 /**
  * Bakes every node's world transform into its geometry and rebuilds a flat,
  * temporary hierarchy: one node per part under a holding root. Returns the
  * holding root and the parts as { name, mesh, node }.
+ *
+ * Parts are named after the closest meaningful ancestor: Sketchfab wraps each
+ * real part in a node like `Rafale-airframe_0` whose child mesh is just
+ * `Object_4`, so the parent's name is the one worth keeping.
  */
 function bakeParts(doc) {
   const sources = doc.getRoot().listScenes()
@@ -181,20 +204,22 @@ function bakeParts(doc) {
   const parts = []
   const baked = new Set()
 
-  const visit = (node) => {
+  const visit = (node, inherited) => {
+    const own = node.getName() ?? ''
+    const semantic = !own || GENERIC_NAME.test(own) || WRAPPER_NAME.test(own) ? inherited : own
     const mesh = node.getMesh()
     if (mesh) {
       if (!baked.has(mesh)) {
         baked.add(mesh)
         transformMesh(mesh, node.getWorldMatrix())
-        parts.push({ name: node.getName() || mesh.getName() || 'part', mesh, node: null })
+        parts.push({ name: semantic || own || 'part', mesh, node: null })
       }
       node.setMesh(null)
     }
-    for (const child of [...node.listChildren()]) visit(child)
+    for (const child of [...node.listChildren()]) visit(child, semantic)
   }
   for (const scene of sources) {
-    for (const child of [...scene.listChildren()]) visit(child)
+    for (const child of [...scene.listChildren()]) visit(child, '')
   }
 
   // Re-home the meshes under the holding root, then drop the source tree.
@@ -360,13 +385,13 @@ function splitPart(doc, parts, holding, split) {
 }
 
 /** Renames the part nodes and moves them under the flat output root. */
-function emitParts(doc, parts, holding, output, rootName, renames) {
+function emitParts(doc, parts, holding, output, rootName) {
   const root = doc.createNode(rootName)
   output.addChild(root)
 
   const used = new Set()
   for (const part of parts) {
-    const base = renames[part.name] ?? kebab(part.name)
+    const base = kebab(part.name)
     let name = base
     let n = 2
     while (used.has(name)) name = `${base}-${n++}`
@@ -412,13 +437,19 @@ for (const model of MODELS) {
   const isObj = src.toLowerCase().endsWith('.obj')
   const doc = isObj ? objToDocument(readFileSync(src, 'utf8'), model.id) : await io.read(src)
 
-  // 1. Semantic names, while the materials are still around to key off. -----
+  // 1. Semantic names, while the source hierarchy is still around. ---------
   if (model.renameByMaterial) {
     for (const node of doc.getRoot().listNodes()) {
       const mesh = node.getMesh()
       if (!mesh) continue
       const material = mesh.listPrimitives()[0]?.getMaterial()?.getName()
       const target = model.renameByMaterial[material]
+      if (target) node.setName(target)
+    }
+  }
+  if (model.rename) {
+    for (const node of doc.getRoot().listNodes()) {
+      const target = model.rename[node.getName() ?? '']
       if (target) node.setName(target)
     }
   }
@@ -453,7 +484,7 @@ for (const model of MODELS) {
   // 5. Canonical frame, then carve the parts the runtime animates. ----------
   const frame = normalize(parts, model.forward)
   for (const split of model.splits ?? []) splitPart(doc, parts, holding, split)
-  emitParts(doc, parts, holding, output, model.id, model.rename ?? {})
+  emitParts(doc, parts, holding, output, model.id)
 
   // 6. Compress and write. ---------------------------------------------------
   await doc.transform(weld(), dedup(), prune())

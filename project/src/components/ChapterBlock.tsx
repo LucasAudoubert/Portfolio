@@ -78,6 +78,23 @@ export function ChapterBlock({ chapter, index }: ChapterBlockProps) {
           {chapter.body}
         </p>
 
+        {chapter.roles && (
+          <dl
+            data-reveal
+            className="mt-8 space-y-3 border-l border-steel/60 pl-4 font-mono text-[11px] tracking-[0.12em] uppercase"
+          >
+            {chapter.roles.map((role) => (
+              <div key={`${role.title}-${role.org}`}>
+                <dt className="text-chalk">{role.title}</dt>
+                <dd className="text-mist/70">
+                  {role.org}
+                  <span className="text-steel"> · {role.period}</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+
         {chapter.stack && (
           <ul
             data-reveal

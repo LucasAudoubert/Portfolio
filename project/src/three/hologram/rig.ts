@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { HologramModel } from './model'
 import type { HologramOverlay } from './overlay'
+import { updateGlow } from './materials'
 
 /**
  * The rig is a flat object of numbers. Anime.js tweens THIS (cheap, no Three.js
@@ -44,6 +45,13 @@ export type HologramRig = {
   labels: number // 0..1 annotation opacity
   overlay: number // 0..1 technical graphics opacity
   glow: number // overall line brightness
+
+  // Focus: clicking an annotation dollies the camera onto that part
+  focusActive: number // 0 = free orbit, 1 = looking at the focused part
+  focusX: number
+  focusY: number
+  focusZ: number
+  focusDistance: number
 }
 
 export const INITIAL_RIG: HologramRig = {
@@ -75,6 +83,12 @@ export const INITIAL_RIG: HologramRig = {
   labels: 0,
   overlay: 1,
   glow: 1,
+
+  focusActive: 0,
+  focusX: 0,
+  focusY: 0,
+  focusZ: 0,
+  focusDistance: 8,
 }
 
 export interface StageModel {
@@ -97,6 +111,10 @@ const CANOPY_TRAVEL = new THREE.Vector3(0, 0.32, 1.05)
 
 const _target = new THREE.Vector3()
 const _shift = new THREE.Vector3()
+const _scanWorld = new THREE.Vector3()
+
+/** Half-height of the scan glow band, in world units. */
+const SCAN_BAND = 0.9
 
 export interface ApplyOptions {
   /** Seconds since the stage started, for continuous motion. */
@@ -173,22 +191,41 @@ export function applyRig(stage: StageModel[], rig: HologramRig, camera: THREE.Pe
     const scanT = THREE.MathUtils.clamp(rig.scan, 0, 1)
     const halfY = model.size.y * 0.5 * scale
     overlay.scan.position.y = THREE.MathUtils.lerp(-halfY - 1.1, halfY + 1.1, scanT)
+
+    // --- glow: hand every shader the ruler's current world height ----------
+    model.root.updateMatrixWorld(true)
+    overlay.scan.getWorldPosition(_scanWorld)
+    const intensity = rig.glow * presence
+    for (const material of model.glowMaterials) {
+      updateGlow(material, time, _scanWorld.y, SCAN_BAND, intensity)
+    }
+    for (const material of overlay.glowMaterials) {
+      updateGlow(material, time, _scanWorld.y, SCAN_BAND, intensity * 0.8)
+    }
   }
 
   // --- camera --------------------------------------------------------------
+  const focus = THREE.MathUtils.clamp(rig.focusActive * (1 - rig.spread), 0, 1)
   const aspect = camera.aspect
   const fit = THREE.MathUtils.clamp(1.45 / aspect, 1, 2.6)
   const wide = THREE.MathUtils.smoothstep(aspect, 0.8, 1.2)
-  const distance = rig.camDistance * fit * (1 + 0.35 * rig.spread)
-  const shiftX = rig.camShiftX * wide * (1 - rig.spread)
+  const distance = THREE.MathUtils.lerp(
+    rig.camDistance * fit * (1 + 0.35 * rig.spread),
+    rig.focusDistance * fit,
+    focus,
+  )
+  const shiftX = rig.camShiftX * wide * (1 - rig.spread) * (1 - focus)
   const visibleHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
-  const targetY = rig.camTargetY - (1 - wide) * 0.14 * visibleHeight
+  const baseTargetY = rig.camTargetY - (1 - wide) * 0.14 * visibleHeight
+  const targetY = THREE.MathUtils.lerp(baseTargetY, rig.focusY, focus)
+  const targetZ = THREE.MathUtils.lerp(rig.camTargetZ, rig.focusZ, focus)
+  const elevation = rig.camElevation + focus * 0.14
 
-  _target.set(0, targetY, rig.camTargetZ)
-  const cosEl = Math.cos(rig.camElevation)
+  _target.set(rig.focusX * focus, targetY, targetZ)
+  const cosEl = Math.cos(elevation)
   camera.position.set(
     _target.x + Math.sin(rig.camAzimuth) * cosEl * distance,
-    _target.y + Math.sin(rig.camElevation) * distance,
+    _target.y + Math.sin(elevation) * distance,
     _target.z + Math.cos(rig.camAzimuth) * cosEl * distance,
   )
 

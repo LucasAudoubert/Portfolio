@@ -1,19 +1,30 @@
-/** Diagnostic: y-band profile of a part in a processed GLB. Dev-only. */
+/**
+ * Diagnostic: slice profile of a part in a processed GLB. Dev-only.
+ *
+ *   node tools/band-probe.mjs public/models/rafale.glb airframe z
+ *
+ * Prints one row per slice along the chosen axis with, per row: triangle
+ * count, how many are "flat" (normal mostly along Y), and the extent of the
+ * geometry on the other two axes. Used to pick region cuts.
+ */
 import { NodeIO } from '@gltf-transform/core'
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions'
 import { dequantize } from '@gltf-transform/functions'
 import { MeshoptDecoder } from 'meshoptimizer'
 
-const [file, partName] = process.argv.slice(2)
+const [file, partName, axis = 'y'] = process.argv.slice(2)
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'meshopt.decoder': MeshoptDecoder })
 const doc = await io.read(file)
 await doc.transform(dequantize())
 const node = doc.getRoot().listNodes().find((n) => n.getName() === partName)
 if (!node) throw new Error(`part ${partName} not found`)
 
+const axisIndex = { x: 0, y: 1, z: 2 }[axis]
+const others = [0, 1, 2].filter((k) => k !== axisIndex)
+const prims = node.getMesh().listPrimitives()
+
 const min = [Infinity, Infinity, Infinity]
 const max = [-Infinity, -Infinity, -Infinity]
-const prims = node.getMesh().listPrimitives()
 const p = [0, 0, 0]
 // Quantisation can push the mesh scale onto the node, so work in world space.
 const wm = node.getWorldMatrix()
@@ -33,14 +44,20 @@ for (const prim of prims) {
     }
   }
 }
-console.log(`part ${partName}: x[${min[0].toFixed(2)}..${max[0].toFixed(2)}] y[${min[1].toFixed(2)}..${max[1].toFixed(2)}] z[${min[2].toFixed(2)}..${max[2].toFixed(2)}]`)
+const fmt = (v) => v.map((x) => x.toFixed(1).padStart(6)).join(' ')
+console.log(`part ${partName}: min(${fmt(min)}) max(${fmt(max)})  slice axis ${axis}`)
 
-const BANDS = 14
-const bands = Array.from({ length: BANDS }, () => ({ n: 0, flat: 0, maxX: 0, maxZrel: 0, minZrel: 99, maxAbsZ: 0 }))
+const BANDS = 20
+const span = max[axisIndex] - min[axisIndex]
+const bands = Array.from({ length: BANDS }, () => ({
+  n: 0,
+  flat: 0,
+  lo: [Infinity, Infinity],
+  hi: [-Infinity, -Infinity],
+}))
 const a = [0, 0, 0]
 const b = [0, 0, 0]
 const c = [0, 0, 0]
-const span = max[1] - min[1]
 for (const prim of prims) {
   const pos = prim.getAttribute('POSITION')
   const idx = prim.getIndices().getArray()
@@ -48,29 +65,41 @@ for (const prim of prims) {
     pos.getElement(idx[i], a)
     pos.getElement(idx[i + 1], b)
     pos.getElement(idx[i + 2], c)
-    const A=toWorld(a),B=toWorld(b),C=toWorld(c); const cy = (A[1] + B[1] + C[1]) / 3
-    const cx = (A[0] + B[0] + C[0]) / 3
-    const cz = (A[2] + B[2] + C[2]) / 3
-    const uy = B[1] - A[1], uz = B[2] - A[2], ux = B[0] - A[0]
-    const vy = C[1] - A[1], vz = C[2] - A[2], vx = C[0] - A[0]
-    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx
-    const len = Math.hypot(nx, ny, nz) || 1
+    const A = toWorld(a)
+    const B = toWorld(b)
+    const C = toWorld(c)
+    const centre = [0, 1, 2].map((k) => (A[k] + B[k] + C[k]) / 3)
+    const u = [B[0] - A[0], B[1] - A[1], B[2] - A[2]]
+    const v = [C[0] - A[0], C[1] - A[1], C[2] - A[2]]
+    let ny = u[2] * v[0] - u[0] * v[2]
+    const len = Math.hypot(
+      u[1] * v[2] - u[2] * v[1],
+      u[2] * v[0] - u[0] * v[2],
+      u[0] * v[1] - u[1] * v[0],
+    ) || 1
     ny /= len
-    void nx; void nz
-    const band = bands[Math.min(BANDS - 1, Math.max(0, Math.floor(((cy - min[1]) / span) * BANDS)))]
+    const band = bands[
+      Math.min(BANDS - 1, Math.max(0, Math.floor(((centre[axisIndex] - min[axisIndex]) / span) * BANDS)))
+    ]
     band.n++
     if (Math.abs(ny) > 0.55) band.flat++
-    band.maxX = Math.max(band.maxX, Math.abs(cx))
-    band.maxZrel = Math.max(band.maxZrel, Math.abs(cz + 1.05))
-    band.minZrel = Math.min(band.minZrel, Math.abs(cz + 1.05))
-    band.maxAbsZ = Math.max(band.maxAbsZ, Math.abs(cz))
+    for (let k = 0; k < 2; k++) {
+      band.lo[k] = Math.min(band.lo[k], centre[others[k]])
+      band.hi[k] = Math.max(band.hi[k], centre[others[k]])
+    }
   }
 }
-console.log('  y band          tris   flat   max|x|  max|z+1.05|  max|z|')
+
+const names = { x: 'X', y: 'Y', z: 'Z' }
+console.log(
+  `  ${axis} band            tris   flat   ${names[others[0]]} range           ${names[others[1]]} range`,
+)
 bands.forEach((band, i) => {
-  const lo = (min[1] + (span * i) / BANDS).toFixed(2)
-  const hi = (min[1] + (span * (i + 1)) / BANDS).toFixed(2)
+  const lo = (min[axisIndex] + (span * i) / BANDS).toFixed(2)
+  const hi = (min[axisIndex] + (span * (i + 1)) / BANDS).toFixed(2)
+  const range = (k) =>
+    band.n === 0 ? '     -' : `${band.lo[k].toFixed(2).padStart(6)}..${band.hi[k].toFixed(2).padStart(6)}`
   console.log(
-    `  ${lo.padStart(6)}..${hi.padStart(6)}  ${String(band.n).padStart(5)}  ${String(band.flat).padStart(5)}  ${band.maxX.toFixed(2).padStart(6)}  ${band.maxZrel.toFixed(2).padStart(10)}  ${band.maxAbsZ.toFixed(2).padStart(6)}`,
+    `  ${lo.padStart(6)}..${hi.padStart(6)}  ${String(band.n).padStart(5)}  ${String(band.flat).padStart(5)}   ${range(0)}        ${range(1)}`,
   )
 })
