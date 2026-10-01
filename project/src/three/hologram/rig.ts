@@ -214,7 +214,11 @@ export function applyRig(stage: StageModel[], rig: HologramRig, camera: THREE.Pe
     rig.focusDistance * fit,
     focus,
   )
-  const shiftX = rig.camShiftX * wide * (1 - rig.spread) * (1 - focus)
+  // Screen-space horizontal shift: slide camera and target along the camera's
+  // right vector so the airframe moves sideways without re-aiming. Focusing
+  // keeps (and slightly increases) that offset, so the framed part still stays
+  // clear of the copy.
+  const shiftX = rig.camShiftX * wide * (1 - rig.spread) * (1 + 0.4 * focus)
   const visibleHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
   const baseTargetY = rig.camTargetY - (1 - wide) * 0.14 * visibleHeight
   const targetY = THREE.MathUtils.lerp(baseTargetY, rig.focusY, focus)
