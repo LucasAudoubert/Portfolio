@@ -1,34 +1,85 @@
 import { createTimeline, onScroll, type Timeline } from 'animejs'
-import { CHAPTERS } from '../data/chapters'
+import { CHAPTERS, chapterLayout, type Chapter } from '../data/chapters'
 import type { HologramRig } from '../three/hologram/rig'
 
-/** Timeline time per chapter. Arbitrary - scroll drives the clock. */
-const STEP = 1000
+/** Timeline time per viewport height of scroll. Arbitrary - scroll drives the clock. */
+export const STEP = 1000
+
+/**
+ * Hand-off between two airframes, in viewport heights before the next
+ * section reaches the top of the viewport:
+ *
+ *   -0.80  callouts gone, outgoing airframe still fully printed
+ *   -0.42  outgoing airframe erased (reveal cut swept down)
+ *   -0.40  stage empty: mechanisms snap to the next arrival pose
+ *    0.00  incoming airframe fully printed (reveal cut swept up)
+ *
+ * At no point are two airframes on stage together.
+ */
+const HANDOFF_OUT = 0.8
+const HANDOFF_ERASED = 0.42
+const HANDOFF_RESET = 0.4
 
 export interface ScrollTimelineOptions {
-  /** Called whenever the rig changes, so the canvas can re-render on demand. */
   onUpdate: () => void
-  /** Skip inertial smoothing for users who prefer reduced motion. */
   reducedMotion: boolean
 }
 
+type Stop = { time: number; pose: Partial<HologramRig> }
+
+/** Mechanism channels that are reset (not animated) while the stage is empty. */
+const SNAP_KEYS = ['explode', 'labels', 'canopy', 'gear', 'yaw', 'pitch', 'roll', 'posY'] as const
+
+function snapPose(chapter: Chapter): Partial<HologramRig> {
+  const out: Partial<HologramRig> = {}
+  for (const key of SNAP_KEYS) {
+    const value = chapter.pose[key]
+    if (typeof value === 'number') out[key] = value
+  }
+  return out
+}
+
+/** Every pose the rig must reach, at absolute timeline times. */
+export function buildStops(): Stop[] {
+  const { starts } = chapterLayout()
+  const stops: Stop[] = []
+
+  CHAPTERS.forEach((chapter, index) => {
+    const start = starts[index]
+    const previous = CHAPTERS[index - 1]
+
+    if (previous && previous.model !== chapter.model) {
+      if (previous.model) {
+        stops.push({ time: start - HANDOFF_OUT, pose: { labels: 0, [previous.model]: 1 } })
+      }
+      const erased: Partial<HologramRig> = {}
+      if (previous.model) erased[previous.model] = 0
+      if (chapter.model) erased[chapter.model] = 0
+      stops.push({ time: start - HANDOFF_ERASED, pose: erased })
+      stops.push({ time: start - HANDOFF_RESET, pose: snapPose(chapter) })
+    }
+
+    stops.push({ time: start, pose: chapter.pose })
+
+    for (const milestone of chapter.milestones ?? []) {
+      if (import.meta.env.DEV && milestone.at > chapter.span - HANDOFF_OUT) {
+        console.warn(`[sequence] ${chapter.id}: milestone at ${milestone.at} overlaps the hand-off`)
+      }
+      stops.push({ time: start + milestone.at, pose: milestone.pose })
+    }
+  })
+
+  return stops.sort((a, b) => a.time - b.time)
+}
+
 /**
- * Builds ONE Anime.js timeline that scrubs the whole page.
+ * ONE Anime.js timeline scrubbed by the whole page. Time is measured in
+ * viewport heights scrolled (x STEP): a section whose top reaches the top of
+ * the viewport is at `start * STEP`.
  *
- *   scroll 0 ............................................ max scroll
- *   pose[0] --> pose[1] --> pose[2] --> ... --> pose[N-1]
- *
- * Chapter i sits in the middle of the viewport at scrollY = i * 100vh, which
- * maps to timeline time i * STEP, so the hologram is exactly in
- * `CHAPTERS[i].pose` while that chapter's copy is centred.
- *
- * A chapter may also declare `milestones`: extra poses reached *inside* its
- * own scroll range (at = 0.5 is halfway to the next chapter). That is how an
- * airframe is shown whole first and then comes apart as the reader continues,
- * instead of arriving already exploded.
- *
- * `sync: 0.55` lerps the timeline toward the real scroll position each tick,
- * which reads as inertia without a single custom scroll listener.
+ * Segments are strictly sequential - each stop tweens from the previous stop
+ * to itself. Two tweens writing the same property at the same time would
+ * fight, and the later one would win with a stale start value.
  */
 export function createScrollTimeline(
   rig: HologramRig,
@@ -38,45 +89,33 @@ export function createScrollTimeline(
   const tl = createTimeline({
     autoplay: onScroll({
       target: scrollTarget,
-      // '<container threshold> <target threshold>'
-      enter: 'top top', // scrollY = 0
-      leave: 'bottom bottom', // scrollY = max
-      sync: reducedMotion ? true : 0.55,
+      enter: 'top top',
+      leave: 'bottom bottom',
+      sync: reducedMotion ? true : 0.6,
     }),
-    defaults: { ease: 'inOutSine', duration: STEP },
+    defaults: { ease: 'inOutSine' },
     onUpdate,
   })
 
-  // Flatten every pose to the absolute time it must be reached at: the chapter
-  // poses at i * STEP, then each milestone at (i + at) * STEP.
-  const stops: Array<{ time: number; pose: Partial<HologramRig> }> = []
-  CHAPTERS.forEach((chapter, index) => {
-    stops.push({ time: index * STEP, pose: chapter.pose })
-    for (const milestone of chapter.milestones ?? []) {
-      stops.push({ time: (index + milestone.at) * STEP, pose: milestone.pose })
-    }
-  })
-  stops.sort((a, b) => a.time - b.time)
-
-  // One tween per interval, from the previous stop to this one. Segments must
-  // never overlap: two tweens writing the same property would fight, and the
-  // later one would win with whatever value it captured when it started.
   let cursor = 0
-  for (const stop of stops) {
+  for (const stop of buildStops()) {
     if (stop.time <= cursor) continue
-    tl.add(
-      rig,
-      { ...stripUndefined(stop.pose), duration: stop.time - cursor },
-      cursor,
-    )
+    const values = numeric(stop.pose)
+    if (Object.keys(values).length === 0) continue
+    tl.add(rig, { ...values, duration: (stop.time - cursor) * STEP }, cursor * STEP)
     cursor = stop.time
   }
+
+  // The scroll range is (total - 1) viewport heights; make the timeline match
+  // it exactly so `top top -> bottom bottom` maps 1:1 onto section starts.
+  const { total } = chapterLayout()
+  const end = (total - 1) * STEP
+  if (cursor * STEP < end) tl.add(rig, { glow: rig.glow, duration: end - cursor * STEP }, cursor * STEP)
 
   return tl
 }
 
-/** `Partial<HologramRig>` -> plain numeric record (Anime.js rejects undefined). */
-function stripUndefined(pose: Partial<HologramRig>): Record<string, number> {
+function numeric(pose: Partial<HologramRig>): Record<string, number> {
   const out: Record<string, number> = {}
   for (const [key, value] of Object.entries(pose)) {
     if (typeof value === 'number') out[key] = value

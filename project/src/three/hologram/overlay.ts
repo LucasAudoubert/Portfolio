@@ -3,31 +3,45 @@ import type { HologramModel } from './model'
 import { createGlowLineMaterial, type GlowMaterial } from './materials'
 
 /**
- * The technical graphics that surround the airframe: reference axes, a
- * dimension bracket under the span, the rotation indicator on the spin axis
- * and the scanning ruler. All flat white lines, all independent from the
- * model so they can be animated on their own timeline.
+ * The technical graphics around an airframe, in its own stage space:
+ *
+ *   - reference axes and dimension brackets (span, length);
+ *   - the rotation indicator, riding on the primary spin hub;
+ *   - the scanning ruler;
+ *   - exploded-view traces: one thin line per part, from its mounting point
+ *     to where it has been pulled - the "assembly path" of a technical
+ *     exploded drawing.
  */
 
 export interface HologramOverlay {
   group: THREE.Group
-  /** Rotation indicator; rotate this around its own axis. */
+  /** Rotation indicator; follows the primary hub, turns in its own plane. */
   ring: THREE.Group | null
-  /** Sweep rig; the rig slides it through the airframe along Y. */
+  /** Sweep ruler; the rig slides it through the airframe along Y. */
   scan: THREE.Group
-  fade: Array<{ material: THREE.Material; base: number }>
-  /** Shader materials that follow the scanning ruler. */
+  /** Rewrites the trace segments from the parts' current positions. */
+  updateTraces(amount: number): void
+  /** materials[0] axes, [1] accents, [2] scan, [3] traces */
   glowMaterials: GlowMaterial[]
   dispose(): void
 }
 
-const AXIS_OPACITY = 0.15
-const ACCENT_OPACITY = 0.65
-const SCAN_OPACITY = 0.4
+const AXIS_OPACITY = 0.13
+const ACCENT_OPACITY = 0.6
+const SCAN_OPACITY = 0.38
+const TRACE_OPACITY = 0.32
 
-/** Short line segment helper: pushes two points into a flat vertex list. */
 function segment(list: number[], a: THREE.Vector3, b: THREE.Vector3) {
   list.push(a.x, a.y, a.z, b.x, b.y, b.z)
+}
+
+function lines(verts: number[], material: THREE.Material): THREE.LineSegments {
+  const object = new THREE.LineSegments(
+    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(verts, 3)),
+    material,
+  )
+  object.frustumCulled = false
+  return object
 }
 
 export function createHologramOverlay(model: HologramModel): HologramOverlay {
@@ -36,150 +50,136 @@ export function createHologramOverlay(model: HologramModel): HologramOverlay {
 
   const axisMaterial = createGlowLineMaterial(AXIS_OPACITY)
   const accentMaterial = createGlowLineMaterial(ACCENT_OPACITY)
-  /** The scanning ruler gets its own material so it can pulse on its own. */
   const scanMaterial = createGlowLineMaterial(SCAN_OPACITY)
+  const traceMaterial = createGlowLineMaterial(TRACE_OPACITY)
 
-  // --- reference axes through the origin ------------------------------------
-  const half = model.size.clone().multiplyScalar(0.5)
+  const { min, max } = model.bounds
+  const centre = model.bounds.getCenter(new THREE.Vector3())
+
+  // --- reference axes + dimension brackets ---------------------------------
   const axisVerts: number[] = []
-  const tick = 0.18
+  const tick = 0.16
   for (const axis of ['x', 'y', 'z'] as const) {
-    const end = new THREE.Vector3()
-    end[axis] = half[axis] + 0.25
-    const start = end.clone().multiplyScalar(-1)
-    segment(axisVerts, start, end)
-    // End ticks: a small cross so each axis reads as a station line.
-    for (const other of ['x', 'y', 'z'] as const) {
-      if (other === axis) continue
-      const a = end.clone()
-      const b = end.clone()
-      a[other] -= tick
-      b[other] += tick
-      segment(axisVerts, a, b)
+    const a = centre.clone()
+    const b = centre.clone()
+    a[axis] = min[axis] - 0.3
+    b[axis] = max[axis] + 0.3
+    segment(axisVerts, a, b)
+    for (const end of [a, b]) {
+      for (const other of ['x', 'y', 'z'] as const) {
+        if (other === axis) continue
+        const p = end.clone()
+        const q = end.clone()
+        p[other] -= tick
+        q[other] += tick
+        segment(axisVerts, p, q)
+      }
     }
   }
 
-  // --- dimension bracket under the span ------------------------------------
-  const bracketY = -half.y - 0.9
-  segment(
-    axisVerts,
-    new THREE.Vector3(-half.x, bracketY, 0),
-    new THREE.Vector3(half.x, bracketY, 0),
-  )
-  for (const x of [-half.x, half.x]) {
-    segment(
-      axisVerts,
-      new THREE.Vector3(x, bracketY - 0.22, 0),
-      new THREE.Vector3(x, bracketY + 0.22, 0),
-    )
+  const floor = min.y - 0.85
+  // Span bracket, in front of the nose.
+  segment(axisVerts, new THREE.Vector3(min.x, floor, min.z), new THREE.Vector3(max.x, floor, min.z))
+  for (const x of [min.x, max.x]) {
+    segment(axisVerts, new THREE.Vector3(x, floor - 0.2, min.z), new THREE.Vector3(x, floor + 0.2, min.z))
   }
-  // ...and a shorter one across the length, on the ground plane.
-  const lengthZ = half.z
-  const bracketX = -half.x - 0.7
-  segment(
-    axisVerts,
-    new THREE.Vector3(bracketX, bracketY, -lengthZ),
-    new THREE.Vector3(bracketX, bracketY, lengthZ),
-  )
-  for (const z of [-lengthZ, lengthZ]) {
-    segment(
-      axisVerts,
-      new THREE.Vector3(bracketX - 0.22, bracketY, z),
-      new THREE.Vector3(bracketX + 0.22, bracketY, z),
-    )
+  // Length bracket, along the left side.
+  segment(axisVerts, new THREE.Vector3(min.x - 0.6, floor, min.z), new THREE.Vector3(min.x - 0.6, floor, max.z))
+  for (const z of [min.z, max.z]) {
+    segment(axisVerts, new THREE.Vector3(min.x - 0.8, floor, z), new THREE.Vector3(min.x - 0.4, floor, z))
   }
-
-  const axes = new THREE.LineSegments(
-    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(axisVerts, 3)),
-    axisMaterial,
-  )
-  axes.frustumCulled = false
-  group.add(axes)
+  group.add(lines(axisVerts, axisMaterial))
 
   // --- rotation indicator ---------------------------------------------------
   let ring: THREE.Group | null = null
   const primary = model.spins[0]
   if (primary) {
-    const { center, radius, axis } = primary
+    const { radius, axis } = primary
     ring = new THREE.Group()
-    ring.position.copy(center)
-    if (axis === 'x') ring.rotation.y = Math.PI / 2
-    else if (axis === 'y') ring.rotation.x = -Math.PI / 2
+    // The ring is drawn in its local XY plane: turn that plane square to the axis.
+    const plane = new THREE.Group()
+    if (axis === 'x') plane.rotation.y = Math.PI / 2
+    else if (axis === 'y') plane.rotation.x = -Math.PI / 2
+    ring.add(plane)
 
     const verts: number[] = []
-    const steps = 72
-    const point = (angle: number, r: number) =>
-      new THREE.Vector3(Math.cos(angle) * r, Math.sin(angle) * r, 0)
+    const steps = 96
+    const point = (angle: number, r: number) => new THREE.Vector3(Math.cos(angle) * r, Math.sin(angle) * r, 0)
     for (let i = 0; i < steps; i++) {
-      segment(verts, point((i / steps) * Math.PI * 2, radius), point(((i + 1) / steps) * Math.PI * 2, radius))
+      // Dashed outer circle: every other segment.
+      if (i % 2 === 0) segment(verts, point((i / steps) * Math.PI * 2, radius), point(((i + 1) / steps) * Math.PI * 2, radius))
     }
-    // Graduations every 15 degrees, longer every 90.
-    for (let i = 0; i < 24; i++) {
-      const angle = (i / 24) * Math.PI * 2
-      const inner = i % 6 === 0 ? radius - 0.45 : radius - 0.22
+    for (let i = 0; i < 36; i++) {
+      const angle = (i / 36) * Math.PI * 2
+      const inner = i % 9 === 0 ? radius - 0.42 : radius - 0.18
       segment(verts, point(angle, radius), point(angle, inner))
     }
-    // Two arrowheads on the ring, showing the direction of travel.
     for (const base of [0, Math.PI]) {
       const tip = point(base, radius - 0.02)
-      const wing = 0.26
+      const wing = Math.min(0.28, radius * 0.25)
       segment(verts, tip, point(base - wing / radius, radius - wing))
       segment(verts, tip, point(base + wing / radius, radius - wing))
     }
-    // The axis itself, drawn through the hub.
-    const axisEnd = new THREE.Vector3()
-    axisEnd[axis] = radius * 0.55
-    segment(verts, axisEnd.clone().multiplyScalar(-1), axisEnd.clone().multiplyScalar(1))
-
-    const ringLines = new THREE.LineSegments(
-      new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(verts, 3)),
-      accentMaterial,
-    )
-    ringLines.frustumCulled = false
-    ring.add(ringLines)
+    const spinner = lines(verts, accentMaterial)
+    spinner.name = 'spinner'
+    plane.add(spinner)
     group.add(ring)
   }
 
   // --- scanning ruler -------------------------------------------------------
   const scan = new THREE.Group()
   const scanVerts: number[] = []
-  const width = half.x + 0.9
-  for (const offset of [-0.16, 0, 0.16]) {
-    scanVerts.push(-width, offset, 0, width, offset, 0)
-    void offset
+  const left = min.x - 0.9
+  const right = max.x + 0.9
+  for (const offset of [-0.14, 0, 0.14]) {
+    segment(scanVerts, new THREE.Vector3(left, offset, centre.z), new THREE.Vector3(right, offset, centre.z))
   }
-  // Ticks along the ruler: a real measuring line, not a laser.
-  for (let x = -Math.floor(width); x <= width; x += 0.5) {
-    const long = Math.abs(x % 1) < 1e-6
-    const h = long ? 0.16 : 0.08
-    segment(scanVerts, new THREE.Vector3(x, -h, 0), new THREE.Vector3(x, h, 0))
+  for (let x = Math.ceil(left * 2) / 2; x <= right; x += 0.5) {
+    const h = Math.abs(x % 1) < 1e-6 ? 0.16 : 0.08
+    segment(scanVerts, new THREE.Vector3(x, -h, centre.z), new THREE.Vector3(x, h, centre.z))
   }
-  const scanLines = new THREE.LineSegments(
-    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(scanVerts, 3)),
-    scanMaterial,
-  )
-  scanLines.frustumCulled = false
-  scan.add(scanLines)
+  scan.add(lines(scanVerts, scanMaterial))
   group.add(scan)
+
+  // --- exploded-view traces (dynamic) ---------------------------------------
+  const traced = model.parts.filter((part) => part.explode.lengthSq() > 0.01)
+  const traceBuffer = new Float32Array(traced.length * 6)
+  const traceGeometry = new THREE.BufferGeometry()
+  traceGeometry.setAttribute('position', new THREE.BufferAttribute(traceBuffer, 3).setUsage(THREE.DynamicDrawUsage))
+  const traces = new THREE.LineSegments(traceGeometry, traceMaterial)
+  traces.frustumCulled = false
+  group.add(traces)
+
+  const updateTraces = (amount: number) => {
+    traces.visible = amount > 0.02
+    if (!traces.visible) return
+    traced.forEach((part, i) => {
+      const o = i * 6
+      traceBuffer[o] = part.center.x
+      traceBuffer[o + 1] = part.center.y
+      traceBuffer[o + 2] = part.center.z
+      traceBuffer[o + 3] = part.current.x
+      traceBuffer[o + 4] = part.current.y
+      traceBuffer[o + 5] = part.current.z
+    })
+    traceGeometry.attributes.position.needsUpdate = true
+  }
 
   return {
     group,
     ring,
     scan,
-    fade: [
-      { material: axisMaterial, base: axisMaterial.baseOpacity },
-      { material: accentMaterial, base: accentMaterial.baseOpacity },
-      { material: scanMaterial, base: scanMaterial.baseOpacity },
-    ],
-    glowMaterials: [axisMaterial, accentMaterial, scanMaterial],
+    updateTraces,
+    glowMaterials: [axisMaterial, accentMaterial, scanMaterial, traceMaterial],
     dispose: () => {
       group.traverse((object) => {
-        const lines = object as THREE.LineSegments
-        if (lines.isLineSegments) lines.geometry.dispose()
+        const segments = object as THREE.LineSegments
+        if (segments.isLineSegments) segments.geometry.dispose()
       })
       axisMaterial.dispose()
       accentMaterial.dispose()
       scanMaterial.dispose()
+      traceMaterial.dispose()
     },
   }
 }

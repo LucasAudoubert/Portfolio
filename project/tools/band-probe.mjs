@@ -12,7 +12,9 @@ import { ALL_EXTENSIONS } from '@gltf-transform/extensions'
 import { dequantize } from '@gltf-transform/functions'
 import { MeshoptDecoder } from 'meshoptimizer'
 
-const [file, partName, axis = 'y'] = process.argv.slice(2)
+const [file, partName, axis = 'y', where] = process.argv.slice(2)
+/** Optional triangle filter, e.g. "(x, y, z, ny) => Math.abs(x) < 0.4 && y > 0.5" */
+const keep = where ? new Function(`return (${where})`)() : () => true
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'meshopt.decoder': MeshoptDecoder })
 const doc = await io.read(file)
 await doc.transform(dequantize())
@@ -78,6 +80,7 @@ for (const prim of prims) {
       u[0] * v[1] - u[1] * v[0],
     ) || 1
     ny /= len
+    if (!keep(centre[0], centre[1], centre[2], ny)) continue
     const band = bands[
       Math.min(BANDS - 1, Math.max(0, Math.floor(((centre[axisIndex] - min[axisIndex]) / span) * BANDS)))
     ]
@@ -90,7 +93,7 @@ for (const prim of prims) {
   }
 }
 
-const names = { x: 'X', y: 'Y', z: 'Z' }
+const names = ['X', 'Y', 'Z']
 console.log(
   `  ${axis} band            tris   flat   ${names[others[0]]} range           ${names[others[1]]} range`,
 )

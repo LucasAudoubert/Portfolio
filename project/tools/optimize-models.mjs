@@ -87,15 +87,23 @@ const MODELS = [
       'mat_2-Alpha.jpg': 'detail',
       'mat_3-Alpha_2.jpg': 'pylons',
       'mat_4-Missile_1.jpg': 'weapons',
-      'mat_5-Main_Body_1.jpg': 'tail',
+      // One material, three assemblies: launcher racks (below), cockpit
+      // interior (middle) and the Longbow mast radar (top). Split below.
+      'mat_5-Main_Body_1.jpg': 'launchers',
       'mat_6-Main_Body_2.jpg': 'airframe',
     },
     /**
-     * The two main rotor blades are welded into the airframe mesh. Rotor
-     * geometry in the canonical frame (nose -Z, mast at x = 0, z = -1.05):
-     *   - blades run along X and droop, so their tips sit well below the hub;
-     *     the fuselage/stub wings underneath never pass |x| 1.4 above y 0.2
-     *   - hub/mast: a small vertical cylinder around the mast axis
+     * Canonical frame: nose -Z, mast axis at x = 0, z = -1.05.
+     *
+     * The FOUR main rotor blades are welded into the airframe mesh:
+     *   - the lateral pair runs along X and droops, tips well below the hub
+     *     (the fuselage and stub wings never pass |x| 1.4 above y 0.3);
+     *   - the fore/aft pair runs along Z inside the fuselage footprint, in a
+     *     thin band (|x| < 0.2, y 0.5..0.8) where nothing else lives once the
+     *     tail (z > 3.1) and the mast base are excluded;
+     *   - hub/mast head: a short vertical cylinder around the mast axis.
+     * The four-blade tail rotor sits on the left of the fin (x < -0.33),
+     * centred near y 0.32, z 4.22; the stabilator below it is excluded by y.
      */
     splits: [
       {
@@ -104,17 +112,29 @@ const MODELS = [
         within: (x, y, z, _nx, ny) => {
           if (y > 0.3 && Math.abs(x) > 1.5) return true
           if (y > 0.3 && Math.abs(x) > 1.25 && Math.abs(ny) > 0.55) return true
+          if (Math.abs(x) < 0.2 && y > 0.5 && y < 0.8 && z < 3.1 && Math.abs(z + 1.05) > 0.45) return true
           return y > 0.6 && Math.hypot(x, z + 1.05) < 0.9
         },
       },
+      {
+        from: 'airframe',
+        into: 'tail-rotor',
+        within: (x, y, z) => x < -0.33 && z > 3.5 && y > -0.35 && Math.hypot(y - 0.32, z - 4.22) < 0.78,
+      },
+      { from: 'launchers', into: 'mast-radar', within: (_x, y) => y > 0.7 },
+      { from: 'launchers', into: 'cockpit', within: (x, y) => y > -0.42 && Math.abs(x) < 0.45 },
     ],
   },
   {
     id: 'mq9',
     src: 'assets/models-src/MQ-9.obj',
     out: 'public/models/mq9.glb',
-    /** Source axes: nose along +Z, up +Y. */
-    forward: '+z',
+    /**
+     * Source axes: nose along -X, up +Y, wings along Z. (The ailerons are
+     * long along Z and the propeller disc lies in the YZ plane - an earlier
+     * '+z' guess baked the drone sideways.)
+     */
+    forward: '-x',
     budget: 26000,
     /** OBJ group names are already semantic; the runner kebab-cases them. */
     rename: {},

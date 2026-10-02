@@ -1,50 +1,60 @@
 import { animate } from 'animejs'
 import { useEffect, useRef, useState, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import * as THREE from 'three'
 import { createScrollTimeline } from '../animation/sequence'
-import { CHAPTERS } from '../data/chapters'
+import { CHAPTERS, chapterLayout } from '../data/chapters'
 import { MODELS, type ModelId, type Reference } from '../data/models'
 import { loadHologramModel, type HologramModel } from '../three/hologram/model'
 import { createHologramOverlay } from '../three/hologram/overlay'
-import { INITIAL_RIG, anchorPosition, applyRig, type HologramRig, type StageModel } from '../three/hologram/rig'
+import { INITIAL_RIG, applyRig, partWorld, revealOf, type HologramRig, type StageModel } from '../three/hologram/rig'
 import { createHologramScene } from '../three/hologram/scene'
+import { Hud, type HudHandle } from './Hud'
 
 interface HologramStageProps {
   /** The tall scrolling element whose scroll position drives the sequence. */
   scrollTargetRef: RefObject<HTMLElement | null>
 }
 
+/** Callout chip size (px) and the vertical gap kept between two chips. */
+const CHIP_WIDTH = 204
+const CHIP_GAP = 46
 /**
- * Where the copy sits for each layout. Annotations that would land inside the
- * copy's half of the viewport are hidden rather than drawn on top of it.
+ * Callouts need room: panel + airframe + a chip column. Below this width
+ * (tablets, 1024 landscape) they would sit on the airframe and the HUD data,
+ * so only the target box is drawn.
  */
-const COPY_ZONE: Record<string, (x: number, y: number, width: number, height: number) => boolean> = {
-  left: (x, _y, width) => x < width * 0.46,
-  right: (x, _y, width) => x > width * 0.54,
-  center: (_x, y, _width, height) => y > height * 0.52,
-}
+const CALLOUT_MIN_WIDTH = 1180
+
+const referenceKey = (reference: Reference) => `${reference.anchor}:${reference.text}`
 
 /**
- * Fixed, full-viewport WebGL layer: the hologram plus its HTML annotations.
+ * Fixed, full-viewport layer: the WebGL hologram, the exploded-view callouts
+ * (SVG leader lines + HTML chips), the target designator box and the HUD.
  *
  * Everything imperative (Three.js + Anime.js + the render loop) lives inside
- * one effect so React only owns the canvas, the labels and the readouts. The
- * effect is fully reversible, which keeps StrictMode's mount -> unmount ->
- * mount cycle safe.
+ * one effect so React only owns the DOM. The effect is fully reversible, which
+ * keeps StrictMode's mount -> unmount -> mount cycle safe.
  */
 export function HologramStage({ scrollTargetRef }: HologramStageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const labelRefs = useRef(new Map<string, HTMLElement>())
-  const readoutRef = useRef<HTMLDivElement>(null)
-  const [progress, setProgress] = useState<number | null>(0)
-  /** Airframe actually on screen - drives annotations and the datasheet. */
-  const [displayModel, setDisplayModel] = useState<ModelId>('rafale')
-  /** Annotation currently framing the camera, if any. */
-  const [focusedKey, setFocusedKey] = useState<string | null>(null)
-  const focusedRef = useRef<string | null>(null)
+  const hudRef = useRef<HudHandle>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
+  const boxStateRef = useRef<HTMLSpanElement>(null)
+  const boxRangeRef = useRef<HTMLSpanElement>(null)
+  const chipRefs = useRef(new Map<string, HTMLButtonElement>())
+  const leaderRefs = useRef(new Map<string, SVGPathElement>())
+  const dotRefs = useRef(new Map<string, SVGGElement>())
   const focusApiRef = useRef<((reference: Reference) => void) | null>(null)
 
-  const shown = MODELS.find((model) => model.id === displayModel)!
+  const [progress, setProgress] = useState<number | null>(0)
+  const [booted, setBooted] = useState(false)
+  /** Airframe actually on stage - drives the callouts and target data. */
+  const [displayModel, setDisplayModel] = useState<ModelId | null>('rafale')
+  const [focusedKey, setFocusedKey] = useState<string | null>(null)
+  const [dataSide, setDataSide] = useState<'left' | 'right'>('left')
+
+  const shown = displayModel ? MODELS.find((model) => model.id === displayModel)! : null
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -53,38 +63,32 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
     if (!canvas || !scrollTarget || !host) return
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-    // --- scene -------------------------------------------------------------
     const hologram = createHologramScene(canvas)
 
     const rig: HologramRig = { ...INITIAL_RIG, ...CHAPTERS[0].pose }
-    let dirty = true
-    const markDirty = () => {
-      dirty = true
-    }
-    const timeline = createScrollTimeline(rig, scrollTarget, { onUpdate: markDirty, reducedMotion })
+    const timeline = createScrollTimeline(rig, scrollTarget, { onUpdate: () => undefined, reducedMotion })
+    const { starts } = chapterLayout()
 
     // --- sizing ------------------------------------------------------------
     let viewWidth = host.clientWidth
     let viewHeight = host.clientHeight
     const resizeObserver = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect
-      viewWidth = width
-      viewHeight = height
-      hologram.resize(width, height)
-      markDirty()
+      viewWidth = entry.contentRect.width
+      viewHeight = entry.contentRect.height
+      hologram.resize(viewWidth, viewHeight)
     })
     resizeObserver.observe(host)
 
     // --- models ------------------------------------------------------------
     let stage: StageModel[] = []
     let disposed = false
-    let lastPercent = -1
-
     const byId = new Map<ModelId, HologramModel>()
+    const boot = { value: reducedMotion ? 1 : 0 }
+    let bootAnimation: { revert: () => void } | null = null
+    let loaded = 0
 
     Promise.all(
-      MODELS.map(async (config, index) => {
+      MODELS.map(async (config) => {
         const model = await loadHologramModel(config)
         if (disposed) {
           model.dispose()
@@ -95,71 +99,38 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
         hologram.scene.add(model.root)
         byId.set(config.id, model)
         stage.push({ model, overlay })
-        const percent = Math.round(((index + 1) / MODELS.length) * 100)
-        if (percent !== lastPercent) {
-          lastPercent = percent
-          setProgress(percent)
-        }
+        loaded++
+        setProgress(Math.round((loaded / MODELS.length) * 100))
       }),
     )
       .then(() => {
-        if (!disposed) setProgress(null)
+        if (disposed) return
+        setProgress(null)
+        setBooted(true)
+        // System boot: the first airframe is printed bottom-up by the reveal cut.
+        bootAnimation = animate(boot, { value: 1, duration: reducedMotion ? 0 : 1900, ease: 'inOutQuad', delay: 150 })
       })
       .catch((error: unknown) => {
         console.error('Failed to load a hologram model', error)
         if (!disposed) setProgress(null)
       })
 
-    // --- focus on an annotation -------------------------------------------
-    // Clicking a label dollies the camera onto that part. The rig owns the
-    // blend (see applyRig), so the scroll timeline keeps scrubbing underneath
-    // and simply takes over again as soon as the reader scrolls.
-    let currentChapter = 0
-    let activeReferences: Reference[] = []
-    let shownModel: ModelId = 'rafale'
-    const focus = { value: 0, intent: false }
+    // --- focus on a callout -------------------------------------------------
+    // Clicking a chip dollies the camera onto that part; scrolling releases it.
+    let shownModel: ModelId | null = 'rafale'
+    let references: Reference[] = MODELS[0].references
+    const focus = { value: 0, intent: false, key: null as string | null }
     let focusAnimation: { revert: () => void } | null = null
+    let restingScrollY = window.scrollY
 
-    const focusOn = (reference: Reference) => {
-      const model = byId.get(shownModel)
-      if (!model) return
-
-      const key = referenceKey(reference)
-      if (focusedRef.current === key) {
-        unfocus()
-        return
-      }
-
-      let centre: THREE.Vector3 | null = null
-      let radius = 2
-      if (typeof reference.anchor === 'string') {
-        const part = model.parts.find((candidate) => candidate.name === reference.anchor)
-        if (part) {
-          centre = part.center
-          radius = part.radius
-        }
-      } else {
-        centre = new THREE.Vector3(...reference.anchor)
-      }
-      if (!centre) return
-
-      rig.focusX = centre.x
-      rig.focusY = centre.y
-      rig.focusZ = centre.z
-      rig.focusDistance = THREE.MathUtils.clamp(radius * 2.6 + 5.5, 8, 21)
-
-      focus.intent = true
-      focusedRef.current = key
-      restingScrollY = window.scrollY
-      setFocusedKey(key)
+    const tweenFocus = (to: number, duration: number) => {
       focusAnimation?.revert()
       focusAnimation = animate(focus, {
-        value: 1,
-        duration: 900,
+        value: to,
+        duration,
         ease: 'inOutSine',
         onUpdate: () => {
           rig.focusActive = focus.value
-          markDirty()
         },
       })
     }
@@ -167,181 +138,338 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
     const unfocus = () => {
       if (!focus.intent) return
       focus.intent = false
-      focusedRef.current = null
+      focus.key = null
       setFocusedKey(null)
-      focusAnimation?.revert()
-      focusAnimation = animate(focus, {
-        value: 0,
-        duration: 550,
-        ease: 'outQuad',
-        onUpdate: () => {
-          rig.focusActive = focus.value
-          markDirty()
-        },
-      })
+      tweenFocus(0, 550)
     }
 
-    focusApiRef.current = focusOn
+    focusApiRef.current = (reference) => {
+      const model = shownModel ? byId.get(shownModel) : null
+      const part = model?.parts.find((candidate) => candidate.name === reference.anchor)
+      if (!model || !part) return
+      const key = referenceKey(reference)
+      if (focus.key === key) {
+        unfocus()
+        return
+      }
+      // World position: the stage carries attitude (yaw, pitch, bob).
+      const target = partWorld(model, part, new THREE.Vector3())
+      rig.focusX = target.x
+      rig.focusY = target.y
+      rig.focusZ = target.z
+      rig.focusRadius = part.radius
+      rig.focusDistance = THREE.MathUtils.clamp(part.radius * 2.6 + 6, 9, 22)
+      focus.intent = true
+      focus.key = key
+      restingScrollY = window.scrollY
+      setFocusedKey(key)
+      tweenFocus(1, 900)
+    }
 
     if (import.meta.env.DEV) {
-      // Dev-only handle for tuning poses and the timeline from the console.
       ;(window as unknown as Record<string, unknown>).__hologram = {
         rig,
         timeline,
-        get chapter() {
-          return currentChapter
-        },
+        boot,
         get models() {
           return stage
         },
       }
     }
 
-    // --- render loop -------------------------------------------------------
+    // --- per-frame helpers -------------------------------------------------
     const projected = new THREE.Vector3()
-    const anchor = new THREE.Vector3()
-    let previous = performance.now()
-    const start = previous
-    let labelsShown = 0
-    let chapterSeen = -1
-    let frame = 0
-    let restingScrollY = window.scrollY
-
-    /** Places the DOM annotations for the chapter currently in view. */
-    const placeLabels = () => {
-      const opacity = rig.labels
-      if (Math.abs(opacity - labelsShown) > 0.02) {
-        labelsShown = opacity
-        for (const element of labelRefs.current.values()) element.style.opacity = String(opacity)
-      }
-      if (opacity < 0.05) return
-
-      const model = byId.get(shownModel)
-      if (!model || !model.root.visible) return
-      if (!activeReferences.length) return
-
-      const inCopyZone = COPY_ZONE[CHAPTERS[currentChapter]?.align ?? 'center']
-      const placed: Array<{ x: number; y: number }> = []
-      const entries = activeReferences
-        .map((reference) => {
-          const element = labelRefs.current.get(referenceKey(reference))
-          if (!element) return null
-          if (typeof reference.anchor === 'string') {
-            const part = model.parts.find((candidate) => candidate.name === reference.anchor)
-            if (!part) return null
-            anchorPosition(model, part, anchor)
-          } else {
-            anchor.set(...reference.anchor).applyMatrix4(model.stage.matrixWorld)
-          }
-          projected.copy(anchor).project(hologram.camera)
-          if (projected.z > 1) return { element, x: NaN, y: NaN }
-          return {
-            element,
-            x: (projected.x * 0.5 + 0.5) * viewWidth,
-            y: (-projected.y * 0.5 + 0.5) * viewHeight,
-          }
-        })
-        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-        .sort((a, b) => a.y - b.y)
-
-      for (const entry of entries) {
-        // The elements are re-created when the airframe changes, so the fade
-        // has to be applied per label rather than once globally.
-        entry.element.style.opacity = String(opacity)
-        // The copy owns one side of the layout; an annotation that would land
-        // on top of it is simply not drawn this frame.
-        const hidden = Number.isNaN(entry.x) || inCopyZone(entry.x, entry.y, viewWidth, viewHeight)
-        entry.element.style.visibility = hidden ? 'hidden' : 'visible'
-        if (hidden) continue
-
-        let y = entry.y
-        for (let step = 0; step < 8; step++) {
-          const clash = placed.some(
-            (other) => Math.abs(other.x - entry.x) < 200 && Math.abs(other.y - y) < 30,
-          )
-          if (!clash) break
-          y += 29
-        }
-        placed.push({ x: entry.x, y })
-        // Labels flip to the other side of their anchor so they sit beside the
-        // airframe instead of on top of it (the dot stays on the anchor).
-        const flip = entry.x > viewWidth * 0.5
-        entry.element.dataset.flip = flip ? '1' : '0'
-        entry.element.style.transform = `translate3d(${entry.x}px, ${y}px, 0) translateY(-50%)${
-          flip ? ' translateX(-100%)' : ''
-        }`
+    const world = new THREE.Vector3()
+    const corner = new THREE.Vector3()
+    const toScreen = (point: THREE.Vector3) => {
+      projected.copy(point).project(hologram.camera)
+      return {
+        x: (projected.x * 0.5 + 0.5) * viewWidth,
+        y: (-projected.y * 0.5 + 0.5) * viewHeight,
+        behind: projected.z > 1,
       }
     }
+
+    /** Screen-space bounds of the airframe as it currently stands (exploded or not). */
+    const screenBounds = (model: HologramModel) => {
+      let x0 = Infinity
+      let y0 = Infinity
+      let x1 = -Infinity
+      let y1 = -Infinity
+      for (const part of model.parts) {
+        if (!part.object.visible) continue
+        const dx = part.current.x - part.center.x
+        const dy = part.current.y - part.center.y
+        const dz = part.current.z - part.center.z
+        for (let i = 0; i < 8; i++) {
+          corner.set(
+            (i & 1 ? part.box.max.x : part.box.min.x) + dx,
+            (i & 2 ? part.box.max.y : part.box.min.y) + dy,
+            (i & 4 ? part.box.max.z : part.box.min.z) + dz,
+          )
+          corner.applyMatrix4(model.stage.matrixWorld)
+          const p = toScreen(corner)
+          if (p.behind) continue
+          x0 = Math.min(x0, p.x)
+          y0 = Math.min(y0, p.y)
+          x1 = Math.max(x1, p.x)
+          y1 = Math.max(y1, p.y)
+        }
+      }
+      return { x0, y0, x1, y1 }
+    }
+
+    /** The free side of the viewport, next to the current chapter's panel. */
+    let panelAlign: string = CHAPTERS[0].align
+    const freeZone = (scrollUnits: number) => {
+      let index = 0
+      for (let i = 0; i < starts.length; i++) if (scrollUnits >= starts[i] - 0.5) index = i
+      const chapter = CHAPTERS[index]
+      if (chapter.align !== panelAlign) {
+        panelAlign = chapter.align
+        setDataSide(chapter.align === 'left' ? 'right' : 'left')
+      }
+      const panel = document.getElementById(`panel-${chapter.id}`)?.getBoundingClientRect()
+      // Keep clear of the HUD tapes: speed on the left (xl+), altitude /
+      // waypoints and the SYS readout on the right (md+).
+      const left = viewWidth >= 1280 ? 96 : 32
+      const right = viewWidth >= 768 ? 140 : 32
+      if (panel && chapter.align === 'right') return { x0: left, x1: panel.left - 28 }
+      if (panel && chapter.align === 'left') return { x0: panel.right + 28, x1: viewWidth - right }
+      return { x0: left, x1: viewWidth - right }
+    }
+
+    const hideCallouts = () => {
+      for (const chip of chipRefs.current.values()) chip.style.opacity = '0'
+      for (const leader of leaderRefs.current.values()) leader.style.opacity = '0'
+      for (const dot of dotRefs.current.values()) dot.style.opacity = '0'
+    }
+
+    /**
+     * Exploded-view callouts. Anchors are split into a left and a right
+     * column at the edges of the free zone, sorted by height and spread so
+     * chips never overlap; each gets an elbow leader line. `rig.labels`
+     * draws them one after another: line first, then the chip.
+     */
+    type Zone = { x0: number; x1: number }
+    type Bounds = { x0: number; y0: number; x1: number; y1: number }
+
+    const placeCallouts = (model: HologramModel, zone: Zone, bounds: Bounds) => {
+      const amount = rig.labels
+      if (amount < 0.01 || viewWidth < CALLOUT_MIN_WIDTH) {
+        hideCallouts()
+        return
+      }
+      const top = 120
+      const bottom = viewHeight - 70
+      const middle = Number.isFinite(bounds.x0) ? (bounds.x0 + bounds.x1) / 2 : (zone.x0 + zone.x1) / 2
+      // Columns hug the airframe's silhouette, but never leave the free zone.
+      const leftX = Number.isFinite(bounds.x0)
+        ? THREE.MathUtils.clamp(bounds.x0 - CHIP_WIDTH - 24, zone.x0, zone.x1 - CHIP_WIDTH)
+        : zone.x0
+      const rightX = Number.isFinite(bounds.x1)
+        ? THREE.MathUtils.clamp(bounds.x1 + 24, zone.x0, zone.x1 - CHIP_WIDTH)
+        : zone.x1 - CHIP_WIDTH
+
+      type Entry = { key: string; ax: number; ay: number; order: number; side: 'left' | 'right'; y: number }
+      const entries: Entry[] = []
+      references.forEach((reference, order) => {
+        const part = model.parts.find((candidate) => candidate.name === reference.anchor)
+        if (!part || !part.object.visible) return
+        const p = toScreen(partWorld(model, part, world))
+        if (p.behind) return
+        entries.push({ key: referenceKey(reference), ax: p.x, ay: p.y, order, side: p.x < middle ? 'left' : 'right', y: 0 })
+      })
+
+      // Two columns only if both fit beside the airframe; otherwise one
+      // column on the roomier (outer) side - chips must never sit on the
+      // airframe they describe.
+      const need = CHIP_WIDTH + 24
+      const roomLeft = Number.isFinite(bounds.x0) ? bounds.x0 - zone.x0 : Infinity
+      const roomRight = Number.isFinite(bounds.x1) ? zone.x1 - bounds.x1 : Infinity
+      if (roomLeft < need || roomRight < need) {
+        const side = roomLeft >= roomRight ? 'left' : 'right'
+        for (const entry of entries) entry.side = side
+      } else {
+        const count = (side: Entry['side']) => entries.filter((entry) => entry.side === side).length
+        const limit = Math.ceil(entries.length / 2) + 1
+        for (const side of ['left', 'right'] as const) {
+          while (count(side) > limit) {
+            const other = side === 'left' ? 'right' : 'left'
+            const candidates = entries.filter((entry) => entry.side === side)
+            candidates.sort((a, b) => Math.abs(a.ax - middle) - Math.abs(b.ax - middle))
+            candidates[0].side = other
+          }
+        }
+      }
+
+      // The HUD target-data block sits in a bottom corner: a column that
+      // shares its x-range stops above it instead of running over it.
+      const data = document.getElementById('hud-target-data')?.getBoundingClientRect()
+      const columnBottom = (x: number) =>
+        data && data.height > 0 && x < data.right + 12 && x + CHIP_WIDTH > data.left - 12
+          ? Math.min(bottom, data.top - 26)
+          : bottom
+
+      for (const side of ['left', 'right'] as const) {
+        const column = entries.filter((entry) => entry.side === side).sort((a, b) => a.ay - b.ay)
+        let cursor = top
+        for (const entry of column) {
+          entry.y = Math.max(entry.ay, cursor)
+          cursor = entry.y + CHIP_GAP
+        }
+        // Push back up if the column ran past the bottom.
+        let floor = columnBottom(side === 'left' ? leftX : rightX)
+        for (let i = column.length - 1; i >= 0; i--) {
+          column[i].y = Math.min(column[i].y, floor)
+          floor = column[i].y - CHIP_GAP
+        }
+      }
+
+      const steps = references.length + 1.5
+      const seen = new Set<string>()
+      for (const entry of entries) {
+        seen.add(entry.key)
+        const chip = chipRefs.current.get(entry.key)
+        const leader = leaderRefs.current.get(entry.key)
+        const dot = dotRefs.current.get(entry.key)
+        if (!chip || !leader || !dot) continue
+
+        const t = THREE.MathUtils.clamp(amount * steps - entry.order, 0, 1)
+        // While a part is framed, the other callouts step back: their
+        // anchors fly off-screen with the dolly and the lines would clutter.
+        const dim = focus.key && focus.key !== entry.key ? rig.focusActive : 0
+        const left = entry.side === 'left'
+        const chipX = left ? leftX : rightX
+        const edgeX = left ? leftX + CHIP_WIDTH : rightX
+        const elbowX = left ? Math.max(edgeX + 28, Math.min(entry.ax - 18, edgeX + 120)) : Math.min(edgeX - 28, Math.max(entry.ax + 18, edgeX - 120))
+
+        const d = `M${entry.ax.toFixed(1)},${entry.ay.toFixed(1)} L${elbowX.toFixed(1)},${entry.y.toFixed(1)} L${edgeX.toFixed(1)},${entry.y.toFixed(1)}`
+        const length = Math.hypot(elbowX - entry.ax, entry.y - entry.ay) + Math.abs(edgeX - elbowX)
+        leader.setAttribute('d', d)
+        leader.style.strokeDasharray = `${length.toFixed(1)}`
+        leader.style.strokeDashoffset = `${(length * (1 - THREE.MathUtils.smoothstep(t, 0, 0.6))).toFixed(1)}`
+        leader.style.opacity = t > 0 ? String(1 - dim) : '0'
+
+        dot.setAttribute('transform', `translate(${entry.ax.toFixed(1)},${entry.ay.toFixed(1)})`)
+        dot.style.opacity = String(THREE.MathUtils.smoothstep(t, 0, 0.25) * (1 - dim))
+
+        const chipT = THREE.MathUtils.smoothstep(t, 0.5, 1)
+        chip.style.opacity = String(chipT * (1 - 0.65 * dim))
+        chip.style.pointerEvents = chipT > 0.5 ? 'auto' : 'none'
+        chip.style.transform = `translate3d(${(chipX + (left ? -8 : 8) * (1 - chipT)).toFixed(1)}px, ${(entry.y - 18).toFixed(1)}px, 0)`
+      }
+      for (const [key, chip] of chipRefs.current) {
+        if (seen.has(key)) continue
+        chip.style.opacity = '0'
+        leaderRefs.current.get(key)?.style.setProperty('opacity', '0')
+        dotRefs.current.get(key)?.style.setProperty('opacity', '0')
+      }
+    }
+
+    /** Target designator: corner brackets around the airframe, "printing" on lock. */
+    let lockStart = performance.now()
+    const placeTargetBox = (model: HologramModel | null, reveal: number, now: number, zone: Zone, b: Bounds) => {
+      const box = boxRef.current
+      if (!box) return
+      if (!model || reveal < 0.05 || !Number.isFinite(b.x0)) {
+        box.style.opacity = '0'
+        return
+      }
+      const lock = THREE.MathUtils.clamp((now - lockStart) / 700, 0, 1)
+      const grow = 1 + 0.18 * (1 - lock) * (1 - lock)
+      const padding = 22
+      // Clamp to the free zone: the brackets never disappear under the panel.
+      const x0 = Math.max(b.x0 - padding, zone.x0 - 12)
+      const x1 = Math.min(b.x1 + padding, zone.x1 + 12)
+      const y0 = Math.max(b.y0 - padding, 104)
+      const y1 = Math.min(b.y1 + padding, viewHeight - 40)
+      const cx = (x0 + x1) / 2
+      const cy = (y0 + y1) / 2
+      const w = (x1 - x0) * grow
+      const h = (y1 - y0) * grow
+      // Steps aside while a part is framed: the dolly makes it oversized.
+      const framed = 1 - THREE.MathUtils.smoothstep(rig.focusActive, 0, 0.6)
+      box.style.opacity = String(THREE.MathUtils.smoothstep(reveal, 0.5, 1) * (1 - 0.45 * rig.labels) * framed)
+      box.style.transform = `translate3d(${(cx - w / 2).toFixed(1)}px, ${(cy - h / 2).toFixed(1)}px, 0)`
+      box.style.width = `${w.toFixed(1)}px`
+      box.style.height = `${h.toFixed(1)}px`
+      if (boxStateRef.current) boxStateRef.current.textContent = lock < 1 ? 'ACQ' : 'LOCK'
+      if (boxRangeRef.current) boxRangeRef.current.textContent = hologram.camera.position.length().toFixed(1)
+    }
+
+    // --- render loop -------------------------------------------------------
+    let frame = 0
+    let previous = performance.now()
+    const start = previous
+    let lastScroll = window.scrollY
+    let speed = 0
+    let travel = 0
 
     const loop = (now: number) => {
       frame = requestAnimationFrame(loop)
       const delta = Math.min(0.05, (now - previous) / 1000)
       previous = now
 
-      // Chapter tracking (copy placement) is cheap and independent from the
-      // timeline easing: it only decides which half of the viewport owns the
-      // layout, so the annotations can avoid it.
-      const range = scrollTarget.scrollHeight - window.innerHeight
-      const progress = range > 0 ? Math.min(1, Math.max(0, window.scrollY / range)) : 0
-      const index = Math.round(progress * (CHAPTERS.length - 1))
-      if (index !== chapterSeen) {
-        chapterSeen = index
-        currentChapter = index
-      }
+      const scrollY = window.scrollY
+      const scrollUnits = scrollY / Math.max(1, window.innerHeight)
+      const moved = scrollY - lastScroll
+      lastScroll = scrollY
+      travel += moved
+      // Time-based smoothing: decays the same at 30 or 144 fps.
+      const instant = Math.min(1200, (Math.abs(moved) / Math.max(delta, 1e-3)) * 0.3)
+      speed += (instant - speed) * (1 - Math.exp(-delta * 5))
 
-      // Which airframe is on screen is decided by the rig itself, not by the
-      // scroll position: annotations and the datasheet must switch exactly when
-      // the crossfade does, otherwise labels point at a model that is leaving.
-      let dominant: ModelId = 'rafale'
-      let presence = -1
+      // The airframe on stage is decided by the rig, not by the scroll
+      // position, so callouts and target data switch exactly with the reveal.
+      let dominant: ModelId | null = null
+      let best = 0.02
       for (const config of MODELS) {
-        const value = rig[config.id] as number
-        if (value > presence) {
-          presence = value
+        const value = revealOf(rig, config.id, boot.value)
+        if (value > best) {
+          best = value
           dominant = config.id
         }
       }
       if (dominant !== shownModel) {
         shownModel = dominant
-        activeReferences = MODELS.find((model) => model.id === dominant)!.references
+        references = dominant ? MODELS.find((model) => model.id === dominant)!.references : []
+        lockStart = now
         setDisplayModel(dominant)
         unfocus()
       }
+      if (focus.intent && Math.abs(scrollY - restingScrollY) > 8) unfocus()
 
-      // Scrolling releases the camera: the sequence takes over again.
-      if (focus.intent && Math.abs(window.scrollY - restingScrollY) > 8) unfocus()
-
-      if (!reducedMotion) dirty = true
-      if (!dirty && stage.length === 0) return
-      dirty = false
-
-      applyRig(stage, rig, hologram.camera, { time: (now - start) / 1000, delta })
+      applyRig(stage, rig, hologram.camera, { time: (now - start) / 1000, delta, boot: boot.value })
       hologram.renderer.render(hologram.scene, hologram.camera)
-      placeLabels()
 
-      // Live readout: written straight to the DOM to avoid re-rendering React
-      // sixty times a second.
-      const readout = readoutRef.current
-      if (readout) {
-        const model = byId.get(shownModel)
-        const spin = model?.spins[0]
-        const rpm = spin ? Math.round(rig[spin.key as keyof HologramRig] * spin.speed * 955) : 0
-        readout.textContent = [
-          `SCAN   ${String(Math.round(rig.scan * 100)).padStart(3, '0')}%`,
-          spin ? `${spin.key === 'sensor' ? 'TURRET' : 'DRIVE '} ${String(rpm).padStart(4, '0')} RPM` : 'DRIVE   ---- RPM',
-          `EXPL   ${String(Math.round(rig.explode * 100)).padStart(3, '0')}%`,
-          focus.intent ? 'CAM    LOCKED' : 'CAM    FREE',
-        ].join('\n')
-      }
+      const model = shownModel ? (byId.get(shownModel) ?? null) : null
+      const zone = freeZone(scrollUnits)
+      const bounds = model ? screenBounds(model) : { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
+      if (model) placeCallouts(model, zone, bounds)
+      else hideCallouts()
+      placeTargetBox(model, best, now, zone, bounds)
+
+      const spin = model?.spins[0]
+      hudRef.current?.update({
+        heading: (rig.camAzimuth * 180) / Math.PI + 180,
+        speed: Math.min(999, speed),
+        travel,
+        scan: rig.scan,
+        explode: rig.explode,
+        rpm: spin ? Math.abs((rig[spin.key as keyof HologramRig] as number) * spin.speed * 9.55) : null,
+        locked: focus.intent,
+      })
     }
     frame = requestAnimationFrame(loop)
 
-    // --- teardown ----------------------------------------------------------
     return () => {
       disposed = true
       cancelAnimationFrame(frame)
       resizeObserver.disconnect()
       timeline.revert()
+      bootAnimation?.revert()
+      focusAnimation?.revert()
       for (const { model, overlay } of stage) {
         hologram.scene.remove(model.root)
         overlay.dispose()
@@ -353,80 +481,114 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
     }
   }, [scrollTargetRef])
 
+  const references = shown?.references ?? []
+
   return (
     <>
       <canvas ref={canvasRef} className="block h-full w-full" aria-hidden="true" />
 
-      {/* Annotations: positioned every frame from their 3D anchors, and
-          clickable to frame the annotated part. */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        {shown.references.map((reference) => {
+      {/* Leader lines + anchor markers */}
+      <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
+        {references.map((reference) => {
           const key = referenceKey(reference)
+          return (
+            <g key={key}>
+              <path
+                ref={(element) => {
+                  if (element) leaderRefs.current.set(key, element)
+                  else leaderRefs.current.delete(key)
+                }}
+                fill="none"
+                stroke="rgb(245 246 248 / 0.75)"
+                strokeWidth={1}
+                style={{ opacity: 0 }}
+              />
+              <g
+                ref={(element) => {
+                  if (element) dotRefs.current.set(key, element)
+                  else dotRefs.current.delete(key)
+                }}
+                style={{ opacity: 0 }}
+              >
+                <circle r={7} fill="none" stroke="rgb(245 246 248 / 0.45)" strokeWidth={1} />
+                <circle r={2.2} fill="rgb(245 246 248)" />
+              </g>
+            </g>
+          )
+        })}
+      </svg>
+
+      {/* Callout chips (clickable: frame the part) */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {references.map((reference, index) => {
+          const key = referenceKey(reference)
+          const focused = focusedKey === key
           return (
             <button
               key={key}
               type="button"
-              aria-label={`Focus ${reference.text}`}
+              aria-label={`Cadrer : ${reference.text}`}
               onClick={() => focusApiRef.current?.(reference)}
               ref={(element) => {
-                if (element) labelRefs.current.set(key, element)
-                else labelRefs.current.delete(key)
+                if (element) chipRefs.current.set(key, element)
+                else chipRefs.current.delete(key)
               }}
-              data-flip="0"
-              data-focused={focusedKey === key ? '1' : '0'}
-              className="group pointer-events-auto absolute top-0 left-0 cursor-crosshair opacity-0 transition-opacity duration-500 will-change-transform focus-visible:outline focus-visible:outline-chalk"
+              style={{ width: CHIP_WIDTH, opacity: 0 }}
+              className={`absolute top-0 left-0 flex cursor-crosshair items-stretch border text-left transition-colors will-change-transform ${
+                focused ? 'border-chalk bg-graphite' : 'border-chalk/25 bg-ink/90 hover:border-chalk/70'
+              }`}
             >
-              <span className="flex items-center gap-2 group-data-[flip=1]:flex-row-reverse">
-                <span className="size-2 shrink-0 rotate-45 border border-chalk bg-transparent shadow-[0_0_8px_rgba(0,0,0,0.9)] transition-all duration-300 group-data-[focused=1]:bg-chalk group-data-[focused=1]:shadow-[0_0_12px_rgba(255,255,255,0.85)]" />
-                <span className="h-px w-7 shrink-0 bg-chalk/70 transition-all duration-300 group-data-[focused=1]:w-10 group-data-[focused=1]:bg-chalk sm:w-11" />
-                <span className="annotation flex flex-col leading-tight whitespace-nowrap">
-                  <span className="text-[11.5px] font-medium tracking-[0.2em] text-white uppercase">
-                    {reference.text}
-                  </span>
-                  {reference.value && (
-                    <span className="mt-0.5 text-[10px] tracking-[0.16em] text-fog/90 uppercase">
-                      {reference.value}
-                    </span>
-                  )}
+              <span className="flex w-8 shrink-0 items-center justify-center border-r border-chalk/25 font-mono text-[10px] tracking-[0.06em] text-fog">
+                {String(index + 1).padStart(2, '0')}
+              </span>
+              <span className="flex min-w-0 flex-col justify-center px-2.5 py-1.5 leading-tight">
+                <span className="truncate font-mono text-[11px] font-medium tracking-[0.08em] text-white uppercase">
+                  {reference.text}
                 </span>
+                {reference.value && (
+                  <span className="truncate font-mono text-[10px] tracking-[0.08em] text-mist">{reference.value}</span>
+                )}
               </span>
             </button>
           )
         })}
       </div>
 
-      {/* Live technical readout */}
+      {/* Target designator box */}
       <div
-        ref={readoutRef}
-        className="tag pointer-events-none fixed top-24 right-6 hidden leading-[1.9] whitespace-pre text-fog/90 md:block lg:right-10"
-      />
-
-      {/* Datasheet for the airframe in focus */}
-      <div className="tag pointer-events-none fixed bottom-6 left-6 hidden tracking-[0.16em] md:block lg:left-20">
-        <p className="text-[12px] text-chalk">{shown.serial}</p>
-        <p className="mt-1 text-mist">{shown.name}</p>
-        <dl className="mt-3 grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-[11px]">
-          {shown.specs.map(([key, value]) => (
-            <div key={key} className="col-span-2 grid grid-cols-subgrid">
-              <dt className="text-steel">{key}</dt>
-              <dd className="text-fog/90">{value}</dd>
-            </div>
-          ))}
-        </dl>
+        ref={boxRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute top-0 left-0 opacity-0 will-change-transform"
+      >
+        {['top-0 left-0 border-t border-l', 'top-0 right-0 border-t border-r', 'bottom-0 left-0 border-b border-l', 'bottom-0 right-0 border-b border-r'].map((corner) => (
+          <span key={corner} className={`absolute size-5 border-chalk/80 ${corner}`} />
+        ))}
+        {shown && (
+          <>
+            <span className="tag absolute -top-6 left-0 text-[10px] whitespace-nowrap text-fog">
+              TGT <span className="text-chalk">{shown.code}</span>
+            </span>
+            <span className="tag absolute -top-6 right-0 text-[10px] text-chalk">
+              <span ref={boxStateRef}>ACQ</span>
+            </span>
+            <span className="tag absolute -bottom-6 right-0 text-[10px] whitespace-nowrap text-mist">
+              RNG <span ref={boxRangeRef} className="text-fog">00.0</span>
+            </span>
+          </>
+        )}
       </div>
+
+      {/* Portalled so the HUD sits above the copy panels (this layer is z-0). */}
+      {createPortal(<Hud ref={hudRef} model={shown} booted={booted} dataSide={dataSide} />, document.body)}
 
       <p
         aria-live="polite"
-        className={`tag absolute inset-x-0 bottom-10 text-center text-fog transition-opacity duration-700 ${
+        className={`tag absolute inset-x-0 top-1/2 text-center text-fog transition-opacity duration-700 ${
           progress === null ? 'opacity-0' : 'opacity-100'
         }`}
       >
-        {progress && progress > 0 ? `Loading airframes ${progress}%` : 'Loading airframes'}
+        {progress && progress > 0 ? `Initialising systems · ${progress}%` : 'Initialising systems'}
       </p>
     </>
   )
-}
-
-function referenceKey(reference: Reference) {
-  return `${reference.text}-${reference.value ?? ''}`
 }

@@ -21,17 +21,22 @@ mécanismes (verrière, train, rotor, hélice, tourelle, vue éclatée).
 | `src/animation/sequence.ts` | la timeline scroll → rig (Anime.js `onScroll`) |
 | `src/three/hologram/scene.ts` | renderer, caméra |
 | `src/three/hologram/model.ts` | chargement du GLB → filaire + arêtes + sommets, registre de pièces |
-| `src/three/hologram/materials.ts` | le shader de glow (réponse au balayage, shimmer, atténuation de profondeur) |
+| `src/three/hologram/materials.ts` | le shader de glow (révélation, balayage, shimmer, profondeur, isolement au focus) |
 | `src/three/hologram/overlay.ts` | axes, cotes, indicateur de rotation, règle de balayage |
 | `src/three/hologram/rig.ts` | `HologramRig` + `applyRig()` (une passe par frame) |
-| `src/components/HologramStage.tsx` | canvas + annotations HTML projetées + HUD |
+| `src/components/HologramStage.tsx` | canvas, callouts (lignes de rappel SVG + puces cliquables), boîte de visée |
+| `src/components/Hud.tsx` | HUD : cap, vitesse, lecture système, données cible, horloge UTC |
+| `src/components/ScrollRail.tsx` | bande altitude / waypoints (navigation entre chapitres) |
+| `src/components/ChapterBlock.tsx` | panneau « dossier » sticky, plan de vol du parcours |
 
-**Un appareil par chapitre.** Le hero et la section « Full-stack » montrent le
-Rafale, la cybersécurité le MQ-9, l'IA l'Apache ; « Tout, à plat » détaille le
-Rafale éclaté et le contact referme sur l'Apache. À l'arrivée sur un chapitre,
-l'appareil est **entier** ; les `milestones` de la timeline le font **exploser
-au scroll** (verrière, train, rotor, puis sous-ensembles) avant la transition
-suivante.
+**Un appareil par chapitre, jamais deux à l'écran.** Le hero et « Full-stack »
+montrent le Rafale, la cybersécurité le MQ-9, l'IA l'Apache ; le parcours est un
+plan de vol sans appareil et le contact referme sur le Rafale. Chaque dossier
+fait 2,6 écrans et son panneau reste fixe pendant trois temps : l'appareil
+arrive **entier**, **explose** au scroll, puis les **callouts** (nom de pièce
+relié par une ligne de rappel) se tracent un par un. Au changement d'appareil,
+le sortant est effacé par la coupe de révélation avant que le suivant ne
+s'« imprime » de bas en haut (`sequence.ts`, hand-off).
 
 Le rendu est volontairement sans éclairage ni tone mapping : tout est ligne
 blanche et point blanc, l'image est construite par l'épaisseur et l'opacité.
@@ -41,12 +46,19 @@ blanche et point blanc, l'image est construite par l'épaisseur et l'opacité.
 Toutes les lignes et tous les points passent par `createGlowLineMaterial` /
 `createGlowPointMaterial`. Le fragment shader ajoute, dans l'espace monde :
 
-1. une **réponse au balayage** — ce qui est à moins de `uScanWidth` de la règle
+1. une **coupe de révélation** (`uCutY`) — au-dessus, rien n'est dessiné ; un
+   liseré lumineux suit la coupe. C'est ce qui imprime / efface un appareil ;
+2. une **réponse au balayage** — ce qui est à moins de `uScanWidth` de la règle
    s'allume, le scan devient une onde qui traverse la cellule ;
-2. un **shimmer** lent qui dérive le long du modèle pour que le filaire ne
+3. un **shimmer** lent qui dérive le long du modèle pour que le filaire ne
    paraisse jamais figé ;
-3. une **atténuation de profondeur** : la face cachée s'enfonce au lieu de
-   concurrencer la silhouette proche.
+4. une **atténuation de profondeur** : la face cachée s'enfonce au lieu de
+   concurrencer la silhouette proche ;
+5. un **isolement au focus** (`uFocusCenter`, `uFocusRadius`, `uFocusDim`) :
+   quand une pièce est cadrée, tout ce qui est hors de sa sphère s'efface.
+
+Le fondu passe par l'uniform `uOpacity` : un `ShaderMaterial` ignore
+`material.opacity`.
 
 C'est un effet de shading, pas un bloom plein écran : moins coûteux, et il
 préserve le côté blueprint.
@@ -60,12 +72,18 @@ opaque (`.panel`) pour rester lisible quelle que soit la densité du filaire.
 
 ### Interaction
 
-* **Clic sur une annotation** → la caméra vient cadrer la pièce (le rig
-  interpole cible et distance, la timeline de scroll reprend la main dès que
-  l'on scrolle) ;
-* glisser/rouler → orbite et zoom pilotés par le scroll ;
-* chaque chapitre remplace l'appareil, ses annotations et ses mécanismes
-  (verrière, train, rotor, hélice, tourelle capteur, vue éclatée).
+* **Clic sur un callout** → la caméra vient cadrer la pièce, le reste de
+  l'appareil et les autres callouts s'effacent (`CAM LOCK` dans le HUD) ; le
+  décalage latéral suit la distance, la pièce reste donc dans la zone libre à
+  côté du texte. La timeline de scroll reprend la main dès que l'on scrolle ;
+* `<main>` est en `pointer-events: none` (seuls les panneaux réactivent les
+  événements) : sans ça, il recouvrait la scène et avalait les clics ;
+* les callouts évitent le panneau, les bandes du HUD et le bloc `TGT DATA` ;
+  en dessous de 1180 px de large, seule la boîte de visée est affichée ;
+* **mobile** : les panneaux des dossiers défilent normalement en haut de la
+  section puis laissent l'écran à la vue éclatée (un panneau sticky plus haut
+  que l'écran était coupé) ; le hero et le contact gardent leur panneau en bas,
+  l'appareil est alors remonté (`mobileLift`).
 
 ```bash
 npm install
@@ -116,14 +134,20 @@ Deux appareils arrivent avec des pièces soudées dans un seul mesh ; le pipelin
 les découpe par région, dans le repère canonique, pour que la vue éclatée
 puisse les adresser :
 
-* **Apache** — les pales du rotor (`rotor`) : elles s'étendent loin en X et
-  tombent vers leurs extrémités, donc le test combine distance à l'axe, hauteur
-  et orientation des facettes (normale ≈ ±Y) pour ne pas emporter la dérive.
+* **Apache** — les **quatre** pales du rotor (`rotor`) : la paire latérale
+  s'étend loin en X et tombe vers ses extrémités (test combinant distance à
+  l'axe, hauteur et normale ≈ ±Y), la paire avant/arrière vit dans une bande
+  fine au-dessus du fuselage ; le rotor anticouple (`tail-rotor`, à gauche de la
+  dérive) ; et un matériau qui mélangeait trois ensembles est redécoupé en
+  `mast-radar`, `cockpit` et `launchers`.
+* **MQ-9** — repère source corrigé (nez −X, pas +Z) ; le pivot de l'hélice est
+  le centre du moyeu (pas la boîte des pales, asymétrique à trois pales) et
+  seule la boule de la tourelle tourne, pas son support.
 * **Rafale** — `radome`, `wing-left/right`, `fin`, `engines` : les coupes sont
   ordonnées, chacune retire sa région de ce qu'il reste de `airframe`
   (nez −Z, envergure X, dérive au-dessus du pont moteur).
 
-Résultat : 15 pièces adressables sur le Rafale, 8 sur l'Apache, 39 sur le MQ-9.
+Résultat : 15 pièces adressables sur le Rafale, 11 sur l'Apache, 39 sur le MQ-9.
 
 ## Outils de développement
 
