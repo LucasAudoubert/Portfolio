@@ -88,6 +88,34 @@
   text-transform: uppercase;
 }
 
+/* ------------------------------------------------------------------
+ * Stack carousel: each row is duplicated in markup and translated by -50%,
+ * which makes the loop seamless. Pure CSS, so it keeps running while the
+ * page scrolls, and it stops for reduced motion.
+ * ------------------------------------------------------------------ */
+.stack-marquee__track {
+  animation: stack-marquee var(--marquee-duration, 50s) linear infinite;
+}
+
+.stack-marquee:hover .stack-marquee__track {
+  animation-play-state: paused;
+}
+
+@keyframes stack-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stack-marquee__track {
+    animation: none;
+  }
+}
+
 /* Annotations: legible over any wireframe density */
 .annotation {
   font-family: var(--font-mono);

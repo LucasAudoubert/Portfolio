@@ -1,6 +1,7 @@
 import { animate, onScroll, stagger } from 'animejs'
 import { useEffect, useRef, type CSSProperties } from 'react'
 import type { Chapter } from '../data/chapters'
+import { StackCaption, StackCarousel } from './StackCarousel'
 
 interface ChapterBlockProps {
   chapter: Chapter
@@ -46,7 +47,8 @@ export function ChapterBlock({ chapter, index }: ChapterBlockProps) {
     }
   }, [])
 
-  const wide = Boolean(chapter.waypoints)
+  // Wide panels: the career timeline and the stack carousel need the room.
+  const wide = Boolean(chapter.waypoints || chapter.carousel)
   // Phones: a tall dossier panel can't be sticky - it would cover the airframe
   // for the whole section, and anything taller than the screen is clipped for
   // good (the flight plan). There the copy scrolls in normal flow at the top
@@ -94,6 +96,13 @@ export function ChapterBlock({ chapter, index }: ChapterBlockProps) {
           </p>
 
           {chapter.waypoints && <FlightPlan waypoints={chapter.waypoints} />}
+
+          {chapter.carousel && (
+            <>
+              <StackCarousel />
+              <StackCaption />
+            </>
+          )}
 
           {chapter.projects && (
             <ul data-reveal className="mt-6 space-y-3.5">

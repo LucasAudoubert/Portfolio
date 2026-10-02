@@ -41,14 +41,25 @@ s'« imprime » de bas en haut (`sequence.ts`, hand-off).
 Le rendu est volontairement sans éclairage ni tone mapping : tout est ligne
 blanche et point blanc, l'image est construite par l'épaisseur et l'opacité.
 
+### Le carrousel de stack
+
+`src/components/StackCarousel.tsx` : deux rangées qui défilent en sens
+opposés, alimentées par `src/data/stack.ts` (icônes SVG dans `public/stack`,
+copiées depuis un pack devicon). Chaque icône est posée sur une pastille et
+reste désaturée au repos — un mur de couleurs de marque se battrait avec la
+palette — puis reprend sa couleur au survol. L'animation est en CSS pur
+(marquee dupliqué translaté de -50 %), donc elle ne coûte rien pendant le
+scroll et s'arrête en `prefers-reduced-motion`. La section « 05 · Stack
+technique » n'a pas de maquette 3D, comme « 04 · Parcours ».
+
 ### Le contenu
 
 Portfolio professionnel : parcours, projets professionnels et académiques,
-compétences. Les maquettes sont des objets d'étude 3D et **leurs annotations
-nomment des compétences et des outils** (API & services, RAG, durcissement,
-CI/CD…), pas des pièces d'avion : la vue éclatée est une carte de la façon dont
-le travail est assemblé. Le dossier « Parcours » n'a pas de maquette — il a sa
-propre chronologie.
+compétences, stack. Les maquettes sont des objets d'étude 3D et **leurs
+annotations nomment des compétences et des outils** (API & services, RAG,
+durcissement, CI/CD…), pas des pièces d'avion : la vue éclatée est une carte de
+la façon dont le travail est assemblé. Les sections « Parcours » et « Stack »
+n'ont pas de maquette — l'une a sa chronologie, l'autre son carrousel.
 
 ### Le shader de glow
 

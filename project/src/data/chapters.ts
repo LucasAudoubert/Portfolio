@@ -43,6 +43,10 @@ export interface Chapter {
   waypoints?: Waypoint[]
   /** Rows for the HUD "fiche" card. */
   profile?: Array<[string, string]>
+  /** Shows the tech-stack carousel. */
+  carousel?: boolean
+  /** Mode shown in the HUD status strip. */
+  mode?: 'PROJET' | 'PARCOURS' | 'STACK' | 'CONTACT'
   align: 'left' | 'right' | 'center'
   span: number
   model: ModelId | null
@@ -277,15 +281,36 @@ export const CHAPTERS: Chapter[] = [
       ['PÉRIODE', '2025 — 2026'],
       ['MÉTHODE', 'Agile · Scrum'],
     ],
+    mode: 'PARCOURS',
     align: 'center',
     span: 1.4,
     model: null,
     pose: { ...REST, rafale: 0, apache: 0, mq9: 0, camAzimuth: 2.3, camElevation: 0.22, camDistance: 24, camTargetY: -2.5, camShiftX: 0 },
   },
   {
-    id: 'contact',
+    id: 'stack',
     code: '05',
-    eyebrow: '05 · Contact',
+    eyebrow: '05 · Stack technique',
+    title: 'Les outils du quotidien.',
+    body: 'Du prototype à la mise en production : une chaîne d’outils cohérente plutôt qu’une collection d’outils. Front-end, back-end, données et industrialisation.',
+    period: '2024 — 2026',
+    carousel: true,
+    mode: 'STACK',
+    profile: [
+      ['FRONT-END', 'React · Next · Vue · Nuxt'],
+      ['BACK-END', 'Node · Express · Java · Spring'],
+      ['DONNÉES', 'PostgreSQL · MongoDB'],
+      ['OUTILS', 'Docker · Git · Jest · Figma'],
+    ],
+    align: 'center',
+    span: 1.3,
+    model: null,
+    pose: { ...REST, rafale: 0, apache: 0, mq9: 0, camAzimuth: 2.35, camElevation: 0.24, camDistance: 26, camTargetY: -2.4, camShiftX: 0 },
+  },
+  {
+    id: 'contact',
+    code: '06',
+    eyebrow: '06 · Contact',
     title: 'Discutons de vos projets.',
     body: 'Disponible pour une alternance de 12 mois dès septembre 2026, des missions freelance et des postes à temps plein.',
     period: '2026',
@@ -296,6 +321,7 @@ export const CHAPTERS: Chapter[] = [
       ['FREELANCE', 'Disponible'],
       ['LANGUES', 'FR · EN B2 · RU'],
     ],
+    mode: 'CONTACT',
     align: 'center',
     span: 1,
     model: 'rafale',

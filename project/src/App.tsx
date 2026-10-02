@@ -70,10 +70,11 @@ export default function App() {
 
       {/* pointer-events-none: <main> spans the whole page above the stage, so it
           would swallow clicks meant for the callout chips. Only the panels opt
-          back in (pointer-events-auto in ChapterBlock).
-          z-3 sits above the hologram but BELOW the HUD (z-5), so a panel
-          scrolling past occludes the HUD rather than stacking over it. */}
-      <main ref={mainRef} className="pointer-events-none relative z-[3]">
+          back in (pointer-events-auto in ChapterBlock) - that is how a click
+          reaches a chip that sits under the copy layer.
+          z-7 puts the panels ABOVE the HUD (z-5): a panel drifting over the
+          heading tape covers it, instead of the readout printing on the text. */}
+      <main ref={mainRef} className="pointer-events-none relative z-[7]">
         {CHAPTERS.map((chapter, index) => (
           <ChapterBlock key={chapter.id} chapter={chapter} index={index} />
         ))}

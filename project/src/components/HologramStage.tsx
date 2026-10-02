@@ -61,6 +61,7 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
     code: `${chapter.code} · ${chapter.eyebrow.replace(/^\d+\s·\s/, '').toUpperCase()}`,
     rows: chapter.profile ?? [],
     maquette: shown?.name ?? null,
+    mode: chapter.mode ?? (chapter.model ? 'PROJET' : 'PARCOURS'),
   }
 
   useEffect(() => {
@@ -165,7 +166,8 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
       rig.focusY = target.y
       rig.focusZ = target.z
       rig.focusRadius = part.radius
-      rig.focusDistance = THREE.MathUtils.clamp(part.radius * 2.6 + 6, 9, 22)
+      // Close enough to read the part, far enough to keep the airframe legible.
+      rig.focusDistance = THREE.MathUtils.clamp(part.radius * 3.4 + 9, 12, 24)
       focus.intent = true
       focus.key = key
       restingScrollY = window.scrollY

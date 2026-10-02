@@ -23,6 +23,8 @@ export interface HudProfile {
   rows: Array<[string, string]>
   /** The 3D maquette on stage, credited discreetly. */
   maquette: string | null
+  /** Status strip mode. */
+  mode: string
 }
 
 interface HudProps {
@@ -187,7 +189,7 @@ export function Hud({ ref, profile, booted, dataSide }: HudProps) {
       {/* --- status strip (bottom right) --------------------------------- */}
       <div className="tag absolute right-6 bottom-6 hidden flex-col items-end gap-1 text-[10px] tracking-[0.2em] md:flex lg:right-14">
         <p className="text-fog/90">
-          MODE <span className="text-chalk">{profile.code === '04' ? 'PARCOURS' : 'PROJET'}</span>
+          MODE <span className="text-chalk">{profile.mode}</span>
           <span className="text-steel"> · </span>STATUT <span className="text-chalk">NOMINAL</span>
         </p>
         <p className="text-mist">UTC {clock}</p>
