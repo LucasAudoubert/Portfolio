@@ -1,7 +1,6 @@
 import { animate, onScroll, stagger } from 'animejs'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type CSSProperties } from 'react'
 import type { Chapter } from '../data/chapters'
-import { MODEL_BY_ID } from '../data/models'
 
 interface ChapterBlockProps {
   chapter: Chapter
@@ -47,7 +46,6 @@ export function ChapterBlock({ chapter, index }: ChapterBlockProps) {
     }
   }, [])
 
-  const model = chapter.model ? MODEL_BY_ID[chapter.model] : null
   const wide = Boolean(chapter.waypoints)
   // Phones: a tall dossier panel can't be sticky - it would cover the airframe
   // for the whole section, and anything taller than the screen is clipped for
@@ -71,14 +69,16 @@ export function ChapterBlock({ chapter, index }: ChapterBlockProps) {
       >
         <div
           id={`panel-${chapter.id}`}
-          className={`panel pointer-events-auto w-full ${wide ? 'max-w-[58rem]' : 'max-w-[30rem]'}`}
+          className={`panel pointer-events-auto w-full ${wide ? 'max-w-[58rem]' : chapter.projects ? 'max-w-[34rem]' : 'max-w-[30rem]'}`}
         >
           {/* Dossier header bar */}
-          <div data-reveal className="tag -mx-7 -mt-7 mb-6 flex items-center justify-between gap-4 border-b border-chalk/10 px-7 py-2.5 text-[10px]">
+          <div data-reveal className="tag -mx-6 -mt-6 mb-5 flex items-center justify-between gap-4 border-b border-chalk/10 px-6 py-2.5 text-[10px]">
             <span className="truncate text-chalk">
               [{chapter.code}] <span className="text-mist">{chapter.eyebrow}</span>
             </span>
-            {model && <span className="hidden shrink-0 whitespace-nowrap text-steel sm:inline">{model.code}</span>}
+            {chapter.period && (
+              <span className="hidden shrink-0 whitespace-nowrap text-steel sm:inline">{chapter.period}</span>
+            )}
           </div>
 
           <h2
@@ -95,25 +95,26 @@ export function ChapterBlock({ chapter, index }: ChapterBlockProps) {
 
           {chapter.waypoints && <FlightPlan waypoints={chapter.waypoints} />}
 
-          {chapter.roles && (
-            <dl data-reveal className="mt-7 space-y-3 border-l border-steel/50 pl-4 font-mono text-[12px] tracking-[0.04em]">
-              {chapter.roles.map((role) => (
-                <div key={`${role.title}-${role.org}`}>
-                  <dt className="text-[13px] font-medium tracking-[0.06em] text-chalk uppercase">{role.title}</dt>
-                  <dd className="mt-0.5 text-mist">
-                    {role.org}
-                    <span className="text-steel"> · {role.period}</span>
-                  </dd>
-                </div>
+          {chapter.projects && (
+            <ul data-reveal className="mt-6 space-y-3.5">
+              {chapter.projects.map((project) => (
+                <li key={project.name} className="grid grid-cols-[auto_1fr] gap-x-3 border-l border-steel/50 pl-4">
+                  <span aria-hidden="true" className="mt-1.5 size-1.5 rotate-45 bg-chalk/70" />
+                  <div>
+                    <p className="font-mono text-[10px] tracking-[0.18em] text-steel uppercase">{project.kind}</p>
+                    <p className="mt-0.5 text-[14px] font-medium text-chalk">{project.name}</p>
+                    <p className="mt-0.5 text-[12.5px] leading-snug text-mist">{project.detail}</p>
+                  </div>
+                </li>
               ))}
-            </dl>
+            </ul>
           )}
 
           {chapter.stack && (
             <ul
               data-reveal
-              className={`mt-6 border-l border-steel/50 pl-4 font-mono text-[12px] tracking-[0.03em] text-mist ${
-                wide ? 'grid gap-x-8 gap-y-1.5 sm:grid-cols-3' : 'space-y-1.5'
+              className={`mt-5 border-l border-steel/50 pl-4 font-mono text-[11.5px] tracking-[0.03em] text-mist ${
+                wide ? 'grid gap-x-8 gap-y-1.5 sm:grid-cols-3' : 'space-y-1'
               }`}
             >
               {chapter.stack.map((line) => (
@@ -125,7 +126,7 @@ export function ChapterBlock({ chapter, index }: ChapterBlockProps) {
           {index === 0 && (
             <p data-reveal className="tag mt-8 flex items-center gap-3 text-steel">
               <span className="inline-block h-px w-8 bg-steel" />
-              Scroll · 3 dossiers techniques
+              Défiler · projets, parcours, contact
             </p>
           )}
 
@@ -156,9 +157,17 @@ export function ChapterBlock({ chapter, index }: ChapterBlockProps) {
 /** Career as a flight plan: waypoints on a route line, like a nav display. */
 function FlightPlan({ waypoints }: { waypoints: NonNullable<Chapter['waypoints']> }) {
   return (
-    <ol data-reveal className="relative mt-8 grid gap-6 sm:grid-cols-5 sm:gap-3">
-      {/* Route line */}
-      <span aria-hidden="true" className="absolute top-[7px] right-[10%] left-[10%] hidden h-px bg-chalk/35 sm:block" />
+    <ol
+      data-reveal
+      style={{ '--wp': waypoints.length } as CSSProperties}
+      className="relative mt-8 grid gap-6 sm:grid-cols-[repeat(var(--wp),minmax(0,1fr))] sm:gap-3"
+    >
+      {/* Route line, from the first node to the last */}
+      <span
+        aria-hidden="true"
+        style={{ left: `${50 / waypoints.length}%`, right: `${50 / waypoints.length}%` }}
+        className="absolute top-[7px] hidden h-px bg-chalk/35 sm:block"
+      />
       {waypoints.map((waypoint, index) => {
         const last = index === waypoints.length - 1
         return (

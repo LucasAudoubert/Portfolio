@@ -58,9 +58,14 @@
  * ------------------------------------------------------------------ */
 .panel {
   position: relative;
-  background-color: rgb(6 6 7 / 0.82);
+  background-color: rgb(6 6 7 / 0.86);
   border: 1px solid rgb(255 255 255 / 0.1);
-  padding: 1.75rem 1.75rem 1.6rem;
+  padding: 1.5rem 1.6rem 1.4rem;
+  /* Never taller than the viewport: a dossier with three projects could
+     otherwise run off both edges of its sticky section. */
+  max-height: calc(100svh - 7rem);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 /* L-shaped tick in the top-left corner of the panel */

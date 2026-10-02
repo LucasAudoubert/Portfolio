@@ -9,7 +9,7 @@ import { loadHologramModel, type HologramModel } from '../three/hologram/model'
 import { createHologramOverlay } from '../three/hologram/overlay'
 import { INITIAL_RIG, applyRig, partWorld, revealOf, type HologramRig, type StageModel } from '../three/hologram/rig'
 import { createHologramScene } from '../three/hologram/scene'
-import { Hud, type HudHandle } from './Hud'
+import { Hud, type HudHandle, type HudProfile } from './Hud'
 
 interface HologramStageProps {
   /** The tall scrolling element whose scroll position drives the sequence. */
@@ -53,8 +53,15 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
   const [displayModel, setDisplayModel] = useState<ModelId | null>('rafale')
   const [focusedKey, setFocusedKey] = useState<string | null>(null)
   const [dataSide, setDataSide] = useState<'left' | 'right'>('left')
+  const [profileIndex, setProfileIndex] = useState(0)
 
   const shown = displayModel ? MODELS.find((model) => model.id === displayModel)! : null
+  const chapter = CHAPTERS[profileIndex]
+  const profile: HudProfile = {
+    code: `${chapter.code} · ${chapter.eyebrow.replace(/^\d+\s·\s/, '').toUpperCase()}`,
+    rows: chapter.profile ?? [],
+    maquette: shown?.name ?? null,
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -221,10 +228,15 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
 
     /** The free side of the viewport, next to the current chapter's panel. */
     let panelAlign: string = CHAPTERS[0].align
+    let profileSeen = 0
     const freeZone = (scrollUnits: number) => {
       let index = 0
       for (let i = 0; i < starts.length; i++) if (scrollUnits >= starts[i] - 0.5) index = i
       const chapter = CHAPTERS[index]
+      if (index !== profileSeen) {
+        profileSeen = index
+        setProfileIndex(index)
+      }
       if (chapter.align !== panelAlign) {
         panelAlign = chapter.align
         setDataSide(chapter.align === 'left' ? 'right' : 'left')
@@ -394,7 +406,7 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
       box.style.transform = `translate3d(${(cx - w / 2).toFixed(1)}px, ${(cy - h / 2).toFixed(1)}px, 0)`
       box.style.width = `${w.toFixed(1)}px`
       box.style.height = `${h.toFixed(1)}px`
-      if (boxStateRef.current) boxStateRef.current.textContent = lock < 1 ? 'ACQ' : 'LOCK'
+      if (boxStateRef.current) boxStateRef.current.textContent = lock < 1 ? '…' : 'PRÊT'
       if (boxRangeRef.current) boxRangeRef.current.textContent = hologram.camera.position.length().toFixed(1)
     }
 
@@ -450,15 +462,13 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
       else hideCallouts()
       placeTargetBox(model, best, now, zone, bounds)
 
-      const spin = model?.spins[0]
       hudRef.current?.update({
         heading: (rig.camAzimuth * 180) / Math.PI + 180,
         speed: Math.min(999, speed),
         travel,
         scan: rig.scan,
         explode: rig.explode,
-        rpm: spin ? Math.abs((rig[spin.key as keyof HologramRig] as number) * spin.speed * 9.55) : null,
-        locked: focus.intent,
+        focused: focus.intent,
       })
     }
     frame = requestAnimationFrame(loop)
@@ -566,20 +576,20 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
         {shown && (
           <>
             <span className="tag absolute -top-6 left-0 text-[10px] whitespace-nowrap text-fog">
-              TGT <span className="text-chalk">{shown.code}</span>
+              MAQUETTE <span className="text-chalk">{shown.code}</span>
             </span>
             <span className="tag absolute -top-6 right-0 text-[10px] text-chalk">
-              <span ref={boxStateRef}>ACQ</span>
+              <span ref={boxStateRef}>…</span>
             </span>
             <span className="tag absolute -bottom-6 right-0 text-[10px] whitespace-nowrap text-mist">
-              RNG <span ref={boxRangeRef} className="text-fog">00.0</span>
+              DIST <span ref={boxRangeRef} className="text-fog">00.0</span>
             </span>
           </>
         )}
       </div>
 
       {/* Portalled so the HUD sits above the copy panels (this layer is z-0). */}
-      {createPortal(<Hud ref={hudRef} model={shown} booted={booted} dataSide={dataSide} />, document.body)}
+      {createPortal(<Hud ref={hudRef} profile={profile} booted={booted} dataSide={dataSide} />, document.body)}
 
       <p
         aria-live="polite"
@@ -587,7 +597,7 @@ export function HologramStage({ scrollTargetRef }: HologramStageProps) {
           progress === null ? 'opacity-0' : 'opacity-100'
         }`}
       >
-        {progress && progress > 0 ? `Initialising systems · ${progress}%` : 'Initialising systems'}
+        {progress && progress > 0 ? `Chargement des maquettes · ${progress}%` : 'Chargement des maquettes'}
       </p>
     </>
   )

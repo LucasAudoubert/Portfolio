@@ -1,30 +1,35 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react'
-import type { ModelConfig } from '../data/models'
 
 /** Values pushed by the render loop every frame. */
 export interface HudState {
   /** Degrees, 0..360 - where the camera is looking. */
   heading: number
-  /** Scroll speed mapped to knots. */
+  /** Scroll speed. */
   speed: number
   /** Accumulated scroll distance (moves the speed tape). */
   travel: number
   scan: number
   explode: number
-  rpm: number | null
-  locked: boolean
+  focused: boolean
 }
 
 export interface HudHandle {
   update(state: HudState): void
 }
 
+/** The card in the bottom corner: which dossier's facts are on screen. */
+export interface HudProfile {
+  code: string
+  rows: Array<[string, string]>
+  /** The 3D maquette on stage, credited discreetly. */
+  maquette: string | null
+}
+
 interface HudProps {
   ref?: Ref<HudHandle>
-  /** Airframe on stage (null between dossiers). */
-  model: ModelConfig | null
+  profile: HudProfile
   booted: boolean
-  /** Bottom corner for the target data: the one the copy panel leaves free. */
+  /** Bottom corner for the card: the one the copy panel leaves free. */
   dataSide: 'left' | 'right'
 }
 
@@ -43,7 +48,7 @@ const pad = (value: number, size: number) => String(Math.round(value)).padStart(
  * Monochrome on purpose (the blueprint palette): a real HUD is green because
  * of the combiner glass, not because green reads as "aviation".
  */
-export function Hud({ ref, model, booted, dataSide }: HudProps) {
+export function Hud({ ref, profile, booted, dataSide }: HudProps) {
   const headingStrip = useRef<HTMLDivElement>(null)
   const headingValue = useRef<HTMLSpanElement>(null)
   const speedStrip = useRef<HTMLDivElement>(null)
@@ -70,10 +75,9 @@ export function Hud({ ref, model, booted, dataSide }: HudProps) {
 
         if (sysRef.current) {
           sysRef.current.textContent = [
-            `SCAN  ${pad(state.scan * 100, 3)}%`,
-            `EXPL  ${pad(state.explode * 100, 3)}%`,
-            state.rpm === null ? 'DRV   ----' : `DRV   ${pad(state.rpm, 4)}`,
-            state.locked ? 'CAM   LOCK' : 'CAM   FREE',
+            `BALAYAGE  ${pad(state.scan * 100, 3)}%`,
+            `ÉCLATÉ    ${pad(state.explode * 100, 3)}%`,
+            state.focused ? 'CAMERA    CADRÉE' : 'CAMERA    LIBRE',
           ].join('\n')
         }
       },
@@ -130,7 +134,7 @@ export function Hud({ ref, model, booted, dataSide }: HudProps) {
         {/* caret + readout */}
         <div className="absolute -top-[2px] left-1/2 h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[6px] border-x-transparent border-t-chalk" />
         <div className="absolute top-[34px] left-1/2 -translate-x-1/2 border border-chalk/70 bg-ink/80 px-2 py-0.5 font-mono text-[11px] tracking-[0.18em] text-chalk">
-          HDG <span ref={headingValue}>000</span>
+          VUE <span ref={headingValue}>000</span>
         </div>
       </div>
 
@@ -150,7 +154,7 @@ export function Hud({ ref, model, booted, dataSide }: HudProps) {
         <div className="absolute top-1/2 -right-1 -translate-y-1/2 border border-chalk/70 bg-ink/90 px-1.5 py-0.5 font-mono text-[11px] text-chalk">
           <span ref={speedValue}>000</span>
         </div>
-        <p className="tag absolute -top-6 left-0 text-[10px] whitespace-nowrap text-mist">SPD KT</p>
+        <p className="tag absolute -top-6 left-0 text-[10px] whitespace-nowrap text-mist">DÉFILEMENT</p>
       </div>
 
       {/* --- system readout (top right) ---------------------------------- */}
@@ -167,32 +171,24 @@ export function Hud({ ref, model, booted, dataSide }: HudProps) {
           dataSide === 'left' ? 'bottom-6 left-6 lg:left-20' : 'right-6 bottom-20 text-right lg:right-14 [&_dl]:justify-end'
         }`}
       >
-        <p className="text-[10px] text-steel">TGT DATA</p>
-        {model ? (
-          <>
-            <p className="mt-1.5 text-[12px] text-chalk">
-              {model.code} <span className="text-steel">·</span> {model.serial}
-            </p>
-            <p className="mt-0.5 text-mist">{model.name}</p>
-            <dl className="mt-3 grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-[11px]">
-              {model.specs.map(([key, value]) => (
-                <div key={key} className="col-span-2 grid grid-cols-subgrid">
-                  <dt className="text-steel">{key}</dt>
-                  <dd className="text-fog/90">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </>
-        ) : (
-          <p className="mt-1.5 text-[12px] text-mist">NAV MODE · NO TARGET</p>
-        )}
+        <p className="text-[10px] text-steel">FICHE</p>
+        <p className="mt-1.5 text-[12px] text-chalk">{profile.code}</p>
+        <dl className="mt-3 grid gap-x-4 gap-y-1.5 text-[11px]">
+          {profile.rows.map(([key, value]) => (
+            <div key={key} className={`grid gap-x-3 ${dataSide === 'right' ? 'grid-cols-[1fr_auto]' : 'grid-cols-[auto_1fr]'}`}>
+              <dt className="text-steel">{key}</dt>
+              <dd className="text-fog/90">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        {profile.maquette && <p className="mt-3 text-[10px] text-steel/80">Maquette 3D · {profile.maquette}</p>}
       </div>
 
       {/* --- status strip (bottom right) --------------------------------- */}
       <div className="tag absolute right-6 bottom-6 hidden flex-col items-end gap-1 text-[10px] tracking-[0.2em] md:flex lg:right-14">
         <p className="text-fog/90">
-          MODE <span className="text-chalk">{model ? 'TGT' : 'NAV'}</span>
-          <span className="text-steel"> · </span>MSTR ARM <span className="text-chalk">SAFE</span>
+          MODE <span className="text-chalk">{profile.code === '04' ? 'PARCOURS' : 'PROJET'}</span>
+          <span className="text-steel"> · </span>STATUT <span className="text-chalk">NOMINAL</span>
         </p>
         <p className="text-mist">UTC {clock}</p>
       </div>

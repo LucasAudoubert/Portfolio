@@ -1,14 +1,15 @@
 import type { HologramRig } from '../three/hologram/rig'
 import type { ModelId } from './models'
 
-/** A position held, rendered as a technical row under the chapter copy. */
-export interface Role {
-  title: string
-  org: string
-  period: string
+/** A project: professional, academic or personal. */
+export interface Project {
+  name: string
+  /** Context and dates, e.g. "Pro · 2026". */
+  kind: string
+  detail: string
 }
 
-/** One point of the career "flight plan" (model-free chapter). */
+/** One step of the career timeline (model-free chapter). */
 export interface Waypoint {
   code: string
   year: string
@@ -20,15 +21,13 @@ export interface Waypoint {
  * One scroll section.
  *
  * `span` is the section height in viewport heights. A dossier is ~2.6 screens
- * tall and its copy is sticky, so the airframe can go through three beats
- * while the text stays put: arrival (assembled) -> exploded -> callouts.
+ * tall and its copy is sticky, so the subject can go through three beats while
+ * the text stays put: arrival -> exploded -> callouts.
  *
  * `pose` is the rig state when the section's top reaches the top of the
  * viewport. `milestones` are extra poses inside the section, `at` measured in
- * viewport heights from that point (must stay below span - 0.8: the last
- * 0.8 screen belongs to the hand-off to the next airframe).
- *
- * `model` is the one airframe on stage for the whole section (or none).
+ * viewport heights from that point (must stay below span - 0.8: the last 0.8
+ * screen belongs to the hand-off to the next maquette).
  */
 export interface Chapter {
   id: string
@@ -37,9 +36,13 @@ export interface Chapter {
   eyebrow: string
   title: string
   body: string
+  /** Dates / context shown on the right of the panel header. */
+  period?: string
   stack?: string[]
-  roles?: Role[]
+  projects?: Project[]
   waypoints?: Waypoint[]
+  /** Rows for the HUD "fiche" card. */
+  profile?: Array<[string, string]>
   align: 'left' | 'right' | 'center'
   span: number
   model: ModelId | null
@@ -47,28 +50,27 @@ export interface Chapter {
   milestones?: Array<{ at: number; pose: Partial<HologramRig> }>
 }
 
-/**
- * Mechanism channels every arrival pose resets, so nothing leaks between dossiers.
- * mobileLift 0: on phones the dossier copy scrolls away (see ChapterBlock), so
- * the airframe is centred; hero and contact dock their panel at the bottom and
- * lift it.
- */
-const REST = { explode: 0, labels: 0, canopy: 0, gear: 0, rotor: 0, propeller: 0, sensor: 0, focusActive: 0, mobileLift: 0 }
+/** Mechanism channels every arrival pose resets, so nothing leaks between sections. */
+const REST = { explode: 0, labels: 0, canopy: 0, gear: 0, rotor: 0, propeller: 0, sensor: 0, focusActive: 0 }
 
 export const CHAPTERS: Chapter[] = [
   {
     id: 'hero',
     code: '00',
-    eyebrow: 'Lucas Audoubert · portfolio 2026',
-    title: 'Systèmes à l’état brut.',
-    body: 'Développeur full-stack et chef de projet digital. Trois appareils, trois dossiers techniques : un même langage — des lignes, des mesures, un système lisible.',
-    stack: ['Full-stack · IA · Cybersécurité', 'Alternance 12 mois — septembre 2026', '3 semaines entreprise / 1 semaine école'],
+    eyebrow: 'Portfolio 2026',
+    title: 'Développeur full-stack & chef de projet digital.',
+    body: '3ᵉ année à l’IIM (Pôle Léonard-de-Vinci), major de promotion, j’intègre à la rentrée un Master IA & Cybersécurité. Développement full-stack, intégration d’IA et sécurité applicative : je cherche une alternance de 12 mois dès septembre 2026.',
+    stack: ['Alternance 12 mois — septembre 2026', 'Rythme 3 semaines entreprise / 1 semaine école', 'Full-stack · IA · Cybersécurité'],
+    profile: [
+      ['FORMATION', 'IIM — 3ᵉ année'],
+      ['MENTION', 'Major de promotion'],
+      ['SUITE', 'Master IA & Cybersécurité'],
+    ],
     align: 'center',
     span: 1,
     model: 'rafale',
     pose: {
       ...REST,
-      mobileLift: 1,
       rafale: 1,
       apache: 0,
       mq9: 0,
@@ -90,13 +92,33 @@ export const CHAPTERS: Chapter[] = [
   {
     id: 'fullstack',
     code: '01',
-    eyebrow: 'Dossier 01 / Full-stack',
-    title: 'Du prototype au poste de pilotage.',
-    body: 'Chez Green Finance : conception des moteurs de calcul — projection de flux de trésorerie, intérêts composés, échéanciers d’amortissement — et des simulations multi-scénarios qui les exploitent en temps réel. Architecture, workflow Git, collaboration design, déploiement.',
+    eyebrow: '01 · Développement full-stack',
+    title: 'Concevoir, livrer, maintenir.',
+    body: 'Chez Green Finance, j’ai conçu les moteurs de calcul — projection de flux de trésorerie, intérêts composés, échéanciers d’amortissement — et les simulations multi-scénarios qui les exploitent en temps réel. À côté, des missions full-stack de bout en bout : architecture, choix techniques, workflow Git, intégration des maquettes et déploiement.',
+    period: '2024 — 2026',
+    projects: [
+      {
+        name: 'Green Finance — moteurs de calcul',
+        kind: 'Pro · 2026',
+        detail: 'Moteurs financiers et simulations multi-scénarios temps réel ; architecture, choix techniques et mise en production.',
+      },
+      {
+        name: 'Applications full-stack',
+        kind: 'Pro · 2024 — aujourd’hui',
+        detail: 'De la maquette au déploiement : API, bases de données, interfaces responsives, optimisation des performances.',
+      },
+      {
+        name: 'Bourse au projet — IIM',
+        kind: 'Académique · 2025 — 2026',
+        detail: 'Projet d’équipe pluridisciplinaire : backlog, planning, développement et livraison.',
+      },
+    ],
     stack: ['TypeScript · React · Next.js · Vue · Nuxt', 'Node · Express · Python · Java · Spring Boot', 'PostgreSQL · MongoDB · Docker · Jest'],
-    roles: [
-      { title: 'Lead developer · solution integration', org: 'Green Finance', period: '2026' },
-      { title: 'Développeur full-stack', org: 'Indépendant', period: '2024 — aujourd’hui' },
+    profile: [
+      ['RÔLE', 'Lead developer'],
+      ['STRUCTURE', 'Green Finance'],
+      ['PÉRIODE', '2026'],
+      ['STACK', 'TypeScript · React · Node'],
     ],
     align: 'right',
     span: 2.6,
@@ -129,11 +151,29 @@ export const CHAPTERS: Chapter[] = [
   {
     id: 'security',
     code: '02',
-    eyebrow: 'Dossier 02 / Cybersécurité',
-    title: 'Observer avant de défendre.',
-    body: 'Sécurité applicative : authentification et gestion des accès, durcissement, revue de code, secrets. À la rentrée, le Master IA & Cybersécurité prend le relais. Sur un drone, tout commence par le capteur : collecter la bonne donnée, puis la protéger.',
+    eyebrow: '02 · Cybersécurité',
+    title: 'Sécuriser par défaut.',
+    body: 'Authentification, gestion des rôles et des accès, durcissement des API, gestion des secrets, revue de code : la sécurité traitée comme une exigence de conception et non comme une couche ajoutée à la fin. Le Master IA & Cybersécurité approfondit l’audit, la détection et la sécurité des modèles.',
+    period: '2025 — 2026',
+    projects: [
+      {
+        name: 'Sécurité applicative',
+        kind: 'Pro / Académique · 2025 — 2026',
+        detail: 'Authentification et gestion des accès, durcissement des API, gestion des secrets et revue de code.',
+      },
+      {
+        name: 'Préparation Master IA & Cybersécurité',
+        kind: 'Académique · 2026 —',
+        detail: 'Audit, détection, sécurité des systèmes et des modèles ; bonnes pratiques et conformité.',
+      },
+    ],
     stack: ['Auth · JWT · gestion des accès', 'Sécurité applicative · durcissement · secrets', 'Docker · Postman · PowerShell'],
-    roles: [{ title: 'Master IA & Cybersécurité', org: 'IIM — Pôle Léonard-de-Vinci', period: '2026 —' }],
+    profile: [
+      ['FORMATION', 'Master IA & Cybersécurité'],
+      ['ÉCOLE', 'IIM — Léonard-de-Vinci'],
+      ['DÉBUT', '2026'],
+      ['DOMAINE', 'Sécurité applicative'],
+    ],
     align: 'left',
     span: 2.6,
     model: 'mq9',
@@ -165,11 +205,29 @@ export const CHAPTERS: Chapter[] = [
   {
     id: 'ai',
     code: '03',
-    eyebrow: 'Dossier 03 / IA',
-    title: 'Faire tourner le système.',
-    body: 'Intégration d’IA en production : OCR, LLM, RAG, agents et MCP. Un modèle ne vaut que s’il tourne, se mesure et se surveille — comme un rotor : quatre pales équilibrées sur un même axe.',
+    eyebrow: '03 · Intelligence artificielle',
+    title: 'De la donnée au service.',
+    body: 'Intégration d’IA en production : OCR, LLM, RAG, agents et MCP. Chaînes de traitement évaluées, mesurées et surveillées — un modèle ne vaut que s’il tourne et qu’on sait pourquoi il se trompe.',
+    period: '2024 — 2026',
+    projects: [
+      {
+        name: 'Chaînes IA',
+        kind: 'Pro / Académique · 2025 — 2026',
+        detail: 'OCR, LLM, RAG, agents et MCP : intégration, évaluation, mise en production et suivi des coûts.',
+      },
+      {
+        name: 'Vision & données',
+        kind: 'Académique · 2024 — 2026',
+        detail: 'Détection et segmentation, préparation des jeux de données, mesure de performance.',
+      },
+    ],
     stack: ['OCR · LLM · RAG · MCP · LoRa', 'Vision · détection · segmentation', 'Inférence · coûts · observabilité'],
-    roles: [{ title: 'Major de promotion — 3ᵉ année', org: 'IIM', period: '2024 — 2026' }],
+    profile: [
+      ['FORMATION', 'IIM — 3ᵉ année'],
+      ['MENTION', 'Major de promotion'],
+      ['PÉRIODE', '2024 — 2026'],
+      ['DOMAINE', 'IA appliquée'],
+    ],
     align: 'right',
     span: 2.6,
     model: 'apache',
@@ -192,24 +250,32 @@ export const CHAPTERS: Chapter[] = [
       glow: 1.05,
     },
     milestones: [
-      { at: 0.8, pose: { explode: 1, rotor: 0.3, camAzimuth: 4.2, camElevation: 0.36, camDistance: 34, camTargetY: 0.5, camTargetZ: 0, camShiftX: -2.3, scan: 0.3 } },
+      { at: 0.8, pose: { explode: 1, rotor: 0.3, camAzimuth: 4.2, camElevation: 0.36, camDistance: 34, camTargetY: 0.5, camTargetZ: 0, camShiftX: -2.9, scan: 0.3 } },
       { at: 1.25, pose: { labels: 1 } },
       { at: 1.75, pose: { camAzimuth: 4.45, scan: 0.7 } },
     ],
   },
   {
-    id: 'pilotage',
+    id: 'parcours',
     code: '04',
-    eyebrow: 'Plan de vol / Parcours',
-    title: 'Piloter, livrer, recommencer.',
-    body: 'Chef de projet digital : équipes pluridisciplinaires — dev, design, marketing —, planning Gantt, backlog ClickUp, suivi GitHub Projects et engagement de délais. Le même goût du système bien câblé, depuis les schémas électriques.',
+    eyebrow: '04 · Parcours',
+    title: 'Un parcours, des livrables.',
+    body: 'Chef de projet digital : équipes pluridisciplinaires — dev, design, marketing —, planning Gantt, backlog ClickUp, suivi GitHub Projects et engagement de délais. Le goût du travail bien cadré vient d’abord des schémas électriques : lire, corriger, documenter.',
+    period: '2022 — 2026',
     stack: ['Pilotage transverse · interface client', 'Gantt · ClickUp · GitHub Issues / Projects', 'Agile · Scrum · qualité de livraison'],
     waypoints: [
-      { code: 'WP1', year: '2022', title: 'Électrotechnicien', org: 'Faymonville — Luxembourg' },
-      { code: 'WP2', year: '2024', title: 'Ingénierie web', org: 'IIM — Pôle Léonard-de-Vinci' },
-      { code: 'WP3', year: '2025', title: 'Chef de projet digital', org: 'Bourse au projet / Culture du mouvement' },
-      { code: 'WP4', year: '2026', title: 'Lead developer', org: 'Green Finance' },
-      { code: 'WP5', year: '2026', title: 'Master IA & Cyber', org: 'IIM — alternance' },
+      { code: '01', year: '2022', title: 'Électrotechnicien', org: 'Faymonville — Luxembourg' },
+      { code: '02', year: '2024', title: 'Ingénierie web', org: 'IIM — Pôle Léonard-de-Vinci' },
+      { code: '03', year: '2024', title: 'Développeur indépendant', org: 'Missions full-stack' },
+      { code: '04', year: '2025', title: 'Chef de projet digital', org: 'Bourse au projet / Culture du mouvement' },
+      { code: '05', year: '2026', title: 'Lead developer', org: 'Green Finance' },
+      { code: '06', year: '2026', title: 'Master IA & Cybersécurité', org: 'IIM — alternance' },
+    ],
+    profile: [
+      ['RÔLE', 'Chef de projet digital'],
+      ['STRUCTURE', 'IIM — Bourse au projet'],
+      ['PÉRIODE', '2025 — 2026'],
+      ['MÉTHODE', 'Agile · Scrum'],
     ],
     align: 'center',
     span: 1.4,
@@ -219,25 +285,31 @@ export const CHAPTERS: Chapter[] = [
   {
     id: 'contact',
     code: '05',
-    eyebrow: 'Contact',
-    title: 'Parlons de votre système.',
-    body: 'Alternance de 12 mois à partir de septembre 2026 (3 semaines en entreprise / 1 semaine à l’école), missions freelance et postes à temps plein. Dites-moi ce qu’il faut faire décoller.',
+    eyebrow: '05 · Contact',
+    title: 'Discutons de vos projets.',
+    body: 'Disponible pour une alternance de 12 mois dès septembre 2026, des missions freelance et des postes à temps plein.',
+    period: '2026',
     stack: ['Français · Anglais B2 · Russe (notions)', 'Astronomie · aéronautique · spéléologie'],
+    profile: [
+      ['ALTERNANCE', 'Septembre 2026'],
+      ['RYTHME', '3 sem. / 1 sem.'],
+      ['FREELANCE', 'Disponible'],
+      ['LANGUES', 'FR · EN B2 · RU'],
+    ],
     align: 'center',
     span: 1,
     model: 'rafale',
     pose: {
       ...REST,
-      mobileLift: 1.45,
       rafale: 1,
       yaw: -0.1,
       pitch: 0.05,
       roll: -0.12,
       posY: 0.1,
-      camAzimuth: 2.2,
-      camElevation: 0.2,
-      camDistance: 24,
-      camTargetY: -2.6,
+      camAzimuth: 2.25,
+      camElevation: 0.22,
+      camDistance: 27,
+      camTargetY: -2.3,
       camTargetZ: 0,
       camShiftX: 0,
       scan: 0.15,

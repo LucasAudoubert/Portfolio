@@ -93,7 +93,7 @@ export function ScrollRail({ scrollTargetRef }: ScrollRailProps) {
                     isActive ? 'text-chalk' : 'text-steel group-hover:text-fog'
                   }`}
                 >
-                  WP{chapter.code}
+                  {chapter.code}
                 </span>
                 <span
                   className={`block size-2 rotate-45 border transition-all ${
@@ -110,7 +110,7 @@ export function ScrollRail({ scrollTargetRef }: ScrollRailProps) {
       <div ref={caretRef} aria-hidden="true" className="absolute top-0 right-0 will-change-transform">
         <div className="absolute top-0 right-[1px] h-0 w-0 -translate-y-1/2 border-y-[5px] border-r-[7px] border-y-transparent border-r-chalk" />
         <div className="absolute top-0 right-3 -translate-y-1/2 border border-chalk/70 bg-ink/90 px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] whitespace-nowrap text-chalk">
-          ALT <span ref={altRef}>02000</span>
+          POS <span ref={altRef}>02000</span>
         </div>
       </div>
     </nav>

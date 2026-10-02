@@ -1,15 +1,19 @@
 /**
- * Everything the viewer needs to know about one airframe: how it explodes,
- * what spins, and which parts get a callout.
+ * Everything the viewer needs about one 3D model: how it explodes, what spins,
+ * and which callouts are pinned to it.
+ *
+ * The models are study maquettes. Their callouts deliberately name SKILLS and
+ * TOOLS, not aircraft parts: the exploded diagram is a map of how the work in
+ * that dossier is put together.
  *
  * Coordinates are the canonical frame produced by `npm run models`
  * (see tools/optimize-models.mjs):
  *
  *     nose -Z · up +Y · span X · longest side 10 units · centred on origin
  *
- * Part names below are the node names in the processed GLBs - check them with
- * the inspector (inspector.html) before adding an entry; a typo silently
- * leaves a part where it is.
+ * Part names are the node names in the processed GLBs - check them with the
+ * inspector (inspector.html) before adding an entry; a typo silently leaves a
+ * part where it is.
  */
 
 export type ModelId = 'rafale' | 'apache' | 'mq9'
@@ -18,9 +22,9 @@ export type ModelId = 'rafale' | 'apache' | 'mq9'
 export type SpinChannel = 'rotor' | 'propeller' | 'sensor'
 
 export interface Reference {
-  /** Part name label, technical style. */
+  /** Skill or tool, technical style. */
   text: string
-  /** Secondary readout under the label. */
+  /** Technology stack behind it. */
   value?: string
   /** Part the leader line points at. */
   anchor: string
@@ -40,11 +44,10 @@ export interface ModelConfig {
   id: ModelId
   /** File in public/models (built by npm run models). */
   url: string
+  /** Name of the 3D maquette, shown as a discreet credit. */
   name: string
-  /** Short designation for the HUD target box. */
+  /** Short designator for the target box. */
   code: string
-  serial: string
-  specs: Array<[string, string]>
   /**
    * Exploded-view offset per part, canonical units. The X component means
    * OUTBOARD: it is mirrored by the side the part sits on, so a pair of wings
@@ -62,13 +65,6 @@ export const MODELS: ModelConfig[] = [
     url: 'models/rafale.glb',
     name: 'Dassault Rafale M',
     code: 'RFL-M',
-    serial: 'AIRFRAME / 001',
-    specs: [
-      ['CLASS', 'MULTIROLE'],
-      ['PARTS', '15'],
-      ['SPAN', '6.90'],
-      ['LENGTH', '10.00'],
-    ],
     explode: {
       radome: [0, 0, -2.1],
       canopy: [0, 1.95, -0.15],
@@ -85,14 +81,14 @@ export const MODELS: ModelConfig[] = [
       'landing-light': [0, -1.45, 0],
     },
     references: [
-      { text: 'Radome', value: 'RBE2 AESA', anchor: 'radome' },
-      { text: 'Verrière', value: 'Monobloc', anchor: 'canopy' },
-      { text: 'Poste de pilotage', value: 'Siège Mk16', anchor: 'cockpit' },
-      { text: 'Voilure delta', value: 'Canards actifs', anchor: 'wing-right' },
-      { text: 'Dérive', value: 'Commandes vol', anchor: 'fin' },
-      { text: 'Nacelles', value: '2 × M88-2', anchor: 'engines' },
-      { text: 'Points d’emport', value: '13 pylônes', anchor: 'pods' },
-      { text: 'Train', value: 'Catapultage', anchor: 'gear-deployed' },
+      { text: 'API & services', value: 'Node · REST', anchor: 'radome' },
+      { text: 'Interface', value: 'React · design system', anchor: 'canopy' },
+      { text: 'Expérience utilisateur', value: 'Parcours · a11y', anchor: 'cockpit' },
+      { text: 'Données', value: 'PostgreSQL · MongoDB', anchor: 'engines' },
+      { text: 'Qualité', value: 'Tests · revue de code', anchor: 'fin' },
+      { text: 'Temps réel', value: 'WebSocket · files', anchor: 'wing-right' },
+      { text: 'Intégrations', value: 'Paiement · e-mail', anchor: 'pods' },
+      { text: 'Déploiement', value: 'Docker · CI/CD', anchor: 'gear-deployed' },
     ],
   },
   {
@@ -100,13 +96,6 @@ export const MODELS: ModelConfig[] = [
     url: 'models/mq9.glb',
     name: 'General Atomics MQ-9',
     code: 'MQ-9B',
-    serial: 'AIRFRAME / 002',
-    specs: [
-      ['CLASS', 'ISR / UCAV'],
-      ['PARTS', '39'],
-      ['SPAN', '10.00'],
-      ['LENGTH', '5.70'],
-    ],
     explode: {
       // Propulsion goes aft along the thrust line.
       propeller: [0, 0, 1.5],
@@ -158,14 +147,14 @@ export const MODELS: ModelConfig[] = [
       { parts: ['sensor'], pivot: 'sensor', axis: 'y', speed: 0.6, key: 'sensor' },
     ],
     references: [
-      { text: 'Tourelle MTS-B', value: 'EO / IR', anchor: 'sensor' },
-      { text: 'Antennes', value: 'SATCOM Ku', anchor: 'antennas' },
-      { text: 'Turbopropulseur', value: 'TPE331-10', anchor: 'engine' },
-      { text: 'Hélice propulsive', value: '3 pales', anchor: 'blades' },
-      { text: 'Empennage en V', value: 'Gouvernes', anchor: 'elevator-r' },
-      { text: 'Ailerons', value: 'Bord de fuite', anchor: 'aileron-l' },
-      { text: 'Points d’emport', value: 'Hellfire', anchor: 'hellfire-pylon-r' },
-      { text: 'Train tricycle', value: '3 points', anchor: 'wheel-l' },
+      { text: 'Authentification', value: 'OAuth · JWT', anchor: 'sensor' },
+      { text: 'Surface d’attaque', value: 'API · réseau', anchor: 'antennas' },
+      { text: 'Chiffrement', value: 'TLS · secrets', anchor: 'engine' },
+      { text: 'Gestion des accès', value: 'RBAC · IAM', anchor: 'blades' },
+      { text: 'Durcissement', value: 'OWASP · en-têtes', anchor: 'elevator-r' },
+      { text: 'Journalisation', value: 'Logs · audit', anchor: 'aileron-l' },
+      { text: 'Détection', value: 'SIEM · alertes', anchor: 'hellfire-pylon-r' },
+      { text: 'Revue & dépendances', value: 'SAST · audit', anchor: 'wheel-l' },
     ],
   },
   {
@@ -173,13 +162,6 @@ export const MODELS: ModelConfig[] = [
     url: 'models/apache.glb',
     name: 'Boeing AH-64D Apache',
     code: 'AH-64D',
-    serial: 'AIRFRAME / 003',
-    specs: [
-      ['CLASS', 'ATTACK'],
-      ['PARTS', '11'],
-      ['ROTOR', '4 PALES'],
-      ['LENGTH', '10.00'],
-    ],
     explode: {
       // The rotor and the radar stack straight up the mast.
       rotor: [0, 2.1, 0],
@@ -194,16 +176,16 @@ export const MODELS: ModelConfig[] = [
     },
     spins: [
       { parts: ['rotor'], pivot: 'rotor', axis: 'y', speed: 2.4, key: 'rotor' },
-      { parts: ['tail-rotor'], pivot: 'tail-rotor', axis: 'x', speed: 11, key: 'rotor' },
+      { parts: ['tail-rotor'], pivot: 'tail-rotor', axis: 'x', speed: 10, key: 'rotor' },
     ],
     references: [
-      { text: 'Radar Longbow', value: 'Mât AN/APG-78', anchor: 'mast-radar' },
-      { text: 'Rotor principal', value: '4 pales', anchor: 'rotor' },
-      { text: 'Verrière', value: 'Tandem', anchor: 'canopy-glass' },
-      { text: 'Poste équipage', value: 'Pilote / tireur', anchor: 'cockpit' },
-      { text: 'Rotor anticouple', value: '4 pales en X', anchor: 'tail-rotor' },
-      { text: 'Lance-missiles', value: 'Ailes tronquées', anchor: 'launchers' },
-      { text: 'Armement', value: 'Hellfire / Hydra', anchor: 'weapons' },
+      { text: 'Veille & benchmarks', value: 'PoC · état de l’art', anchor: 'mast-radar' },
+      { text: 'Orchestration', value: 'Agents · outils', anchor: 'rotor' },
+      { text: 'Interface IA', value: 'Chat · restitution', anchor: 'canopy-glass' },
+      { text: 'Contexte & prompt', value: 'RAG · embeddings', anchor: 'cockpit' },
+      { text: 'Ingestion', value: 'OCR · prétraitement', anchor: 'tail-rotor' },
+      { text: 'Modèles', value: 'LLM · vision', anchor: 'launchers' },
+      { text: 'Évaluation', value: 'Métriques · garde-fous', anchor: 'weapons' },
     ],
   },
 ]

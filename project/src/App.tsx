@@ -70,8 +70,10 @@ export default function App() {
 
       {/* pointer-events-none: <main> spans the whole page above the stage, so it
           would swallow clicks meant for the callout chips. Only the panels opt
-          back in (pointer-events-auto in ChapterBlock). */}
-      <main ref={mainRef} className="pointer-events-none relative z-10">
+          back in (pointer-events-auto in ChapterBlock).
+          z-3 sits above the hologram but BELOW the HUD (z-5), so a panel
+          scrolling past occludes the HUD rather than stacking over it. */}
+      <main ref={mainRef} className="pointer-events-none relative z-[3]">
         {CHAPTERS.map((chapter, index) => (
           <ChapterBlock key={chapter.id} chapter={chapter} index={index} />
         ))}

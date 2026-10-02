@@ -26,8 +26,8 @@ mécanismes (verrière, train, rotor, hélice, tourelle, vue éclatée).
 | `src/three/hologram/rig.ts` | `HologramRig` + `applyRig()` (une passe par frame) |
 | `src/components/HologramStage.tsx` | canvas, callouts (lignes de rappel SVG + puces cliquables), boîte de visée |
 | `src/components/Hud.tsx` | HUD : cap, vitesse, lecture système, données cible, horloge UTC |
-| `src/components/ScrollRail.tsx` | bande altitude / waypoints (navigation entre chapitres) |
-| `src/components/ChapterBlock.tsx` | panneau « dossier » sticky, plan de vol du parcours |
+| `src/components/ScrollRail.tsx` | ruban de positions (navigation entre sections) |
+| `src/components/ChapterBlock.tsx` | panneau sticky : projets, compétences, chronologie du parcours |
 
 **Un appareil par chapitre, jamais deux à l'écran.** Le hero et « Full-stack »
 montrent le Rafale, la cybersécurité le MQ-9, l'IA l'Apache ; le parcours est un
@@ -41,6 +41,15 @@ s'« imprime » de bas en haut (`sequence.ts`, hand-off).
 Le rendu est volontairement sans éclairage ni tone mapping : tout est ligne
 blanche et point blanc, l'image est construite par l'épaisseur et l'opacité.
 
+### Le contenu
+
+Portfolio professionnel : parcours, projets professionnels et académiques,
+compétences. Les maquettes sont des objets d'étude 3D et **leurs annotations
+nomment des compétences et des outils** (API & services, RAG, durcissement,
+CI/CD…), pas des pièces d'avion : la vue éclatée est une carte de la façon dont
+le travail est assemblé. Le dossier « Parcours » n'a pas de maquette — il a sa
+propre chronologie.
+
 ### Le shader de glow
 
 Toutes les lignes et tous les points passent par `createGlowLineMaterial` /
@@ -53,12 +62,11 @@ Toutes les lignes et tous les points passent par `createGlowLineMaterial` /
 3. un **shimmer** lent qui dérive le long du modèle pour que le filaire ne
    paraisse jamais figé ;
 4. une **atténuation de profondeur** : la face cachée s'enfonce au lieu de
-   concurrencer la silhouette proche ;
-5. un **isolement au focus** (`uFocusCenter`, `uFocusRadius`, `uFocusDim`) :
-   quand une pièce est cadrée, tout ce qui est hors de sa sphère s'efface.
+   concurrencer la silhouette proche.
 
 Le fondu passe par l'uniform `uOpacity` : un `ShaderMaterial` ignore
-`material.opacity`.
+`material.opacity` — une version antérieure écrivait `.opacity` et les
+transitions entre appareils ne se voyaient donc pas.
 
 C'est un effet de shading, pas un bloom plein écran : moins coûteux, et il
 préserve le côté blueprint.
@@ -72,8 +80,8 @@ opaque (`.panel`) pour rester lisible quelle que soit la densité du filaire.
 
 ### Interaction
 
-* **Clic sur un callout** → la caméra vient cadrer la pièce, le reste de
-  l'appareil et les autres callouts s'effacent (`CAM LOCK` dans le HUD) ; le
+* **Clic sur un callout** → la caméra vient cadrer la pièce (`CAMERA CADRÉE`
+  dans le HUD) ; le
   décalage latéral suit la distance, la pièce reste donc dans la zone libre à
   côté du texte. La timeline de scroll reprend la main dès que l'on scrolle ;
 * `<main>` est en `pointer-events: none` (seuls les panneaux réactivent les
